@@ -81,7 +81,11 @@ class App {
                 input.type = 'file';
                 input.onchange = (e) => {
                     let file = e.target.files[0];
-                    that.loadBVH('data/bvh/' + file.name);
+
+                    LoaderUtils.loadTextFile( file, text => {
+                        const data = that.loader.parse( text );
+                        that.onLoadBVH(data) ;
+                    });
                 }
                 input.click();
             },
