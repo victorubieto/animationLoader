@@ -1,9 +1,8 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
+import * as datGui from 'https://cdn.skypack.dev/dat.gui';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
-import { BVHExporter } from "./BVHExporter.js";
-import * as datGui from 'https://cdn.skypack.dev/dat.gui';
-
+import { LoaderUtils } from "./utils.js";
 
 class App {
 
@@ -38,9 +37,16 @@ class App {
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
         this.renderer.setPixelRatio( window.devicePixelRatio );
         this.renderer.setSize( window.innerWidth, window.innerHeight );
-        document.body.appendChild( this.renderer.domElement );
+
+        const canvas = this.renderer.domElement;
+
+        document.body.appendChild( canvas );
+
+        canvas.ondragover = () => {return false};
+        canvas.ondragend = () => {return false};
+        canvas.ondrop = (e) => this.onDrop(e);
         
-        this.controls = new OrbitControls( this.camera, this.renderer.domElement );
+        this.controls = new OrbitControls( this.camera, canvas );
         this.controls.minDistance = 50;
         this.controls.maxDistance = 750;
         this.controls.target = new THREE.Vector3(0, 50, 0);
@@ -125,6 +131,36 @@ class App {
         gui.add(this.options,'reset').name('Reset Pose');
     }
     
+    onDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+
+        const files = e.dataTransfer.files;
+
+        if(!files.length)
+            return;
+
+        for(let i = 0; i < files.length; i++)
+        {
+            var file = files[i],
+            name = file.name,
+            tokens = name.split("."),
+            extension = tokens[tokens.length-1].toLowerCase(),
+            valid_extensions = [ 'bvh' ];
+            
+            if(valid_extensions.lastIndexOf(extension) < 0)
+            {
+                alert("Invalid file extension. Extension was '" + extension + "'");
+                return;
+            }
+
+            LoaderUtils.loadTextFile( file, text => {
+                const data = this.loader.parse( text );
+                this.onLoadBVH(data) ;
+            });
+        }
+    }
+
     animate() {
 
         requestAnimationFrame( this.animate.bind(this) );
@@ -145,39 +181,41 @@ class App {
     }
 
     loadBVH( filename, getSkeleton = false ) {
+        this.loader.load( filename, result => this.onLoadBVH(result, getSkeleton) );
+    }
 
-        this.loader.load( filename , ( result ) => {
-            if (getSkeleton) {
-                this.skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[ 0 ] );
-                this.skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
-                this.skeletonHelper.root.position.set(0,85,0); // offset so it sits in the middle of the grid
+    onLoadBVH(result, getSkeleton) {
+
+        if (getSkeleton) {
+            this.skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[ 0 ] );
+            this.skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
+            this.skeletonHelper.root.position.set(0,85,0); // offset so it sits in the middle of the grid
+    
+            //TODO json of object of objects
+            //...
+            //let data = JSON.stringify( result.skeleton );
+            //BVHExporter.download(data, 'defaultSkeleton.json', 'application/json');
+            // let newDataArray = result.skeleton.reduce(function(arr, obj) {
+            //     let newObj = {};
+            //     for (let key in obj) {
+            //         newObj[key] = obj[key][0]
+            //     }
+                
+            //     arr.push(newObj);
+            //         return arr;
+            // }, [] );
+            // let newData = JSON.stringify(newDataArray);
+
+            this.boneContainer = new THREE.Group();
+            this.boneContainer.add( result.skeleton.bones[ 0 ] );
         
-                //TODO json of object of objects
-                //...
-                //let data = JSON.stringify( result.skeleton );
-                //BVHExporter.download(data, 'defaultSkeleton.json', 'application/json');
-                // let newDataArray = result.skeleton.reduce(function(arr, obj) {
-                //     let newObj = {};
-                //     for (let key in obj) {
-                //         newObj[key] = obj[key][0]
-                //     }
-                    
-                //     arr.push(newObj);
-                //         return arr;
-                // }, [] );
-                // let newData = JSON.stringify(newDataArray);
-
-                this.boneContainer = new THREE.Group();
-                this.boneContainer.add( result.skeleton.bones[ 0 ] );
-            
-                this.scene.add( this.skeletonHelper );
-                this.scene.add( this.boneContainer );
-            } 
-            else { // play animation
-                this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
-                this.mixer.clipAction( result.clip ).setEffectiveWeight( 1.0 ).play();
-            }
-        } );
+            this.scene.add( this.skeletonHelper );
+            this.scene.add( this.boneContainer );
+        } 
+        else { // play animation
+            this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
+            this.mixer.clipAction( result.clip ).setEffectiveWeight( 1.0 ).play();
+        }
     }
 
     createAnimationFromRotations( name, quaternions_data ) {
