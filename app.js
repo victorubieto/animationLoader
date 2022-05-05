@@ -51,7 +51,7 @@ class App {
         this.controls.maxDistance = 750;
         this.controls.target = new THREE.Vector3(0, 50, 0);
         this.controls.update();
-        
+
         // We get the skeleton from an aux animation
         this.loadBVH( 'data/bvh/Taunt.bvh', true );
 
@@ -66,6 +66,19 @@ class App {
         
         this.initGUI();
         this.animate();
+
+        setTimeout( () => {
+            const queryString = window.location.search;
+            const urlParams = new URLSearchParams(queryString);
+            const storageDataName = urlParams.get('load');
+    
+            if( storageDataName ) {
+                // Remove info
+                // window.localStorage.removeItem( storageDataName );
+                const bvh = window.localStorage.getItem( storageDataName );
+                this.onLoadBVH( this.loader.parse( bvh ));
+            }
+        }, 50 );
     }
 
     initGUI() {
@@ -278,5 +291,7 @@ class App {
 
 let app = new App();
 app.init();
+
+window.app = app;
 
 export { app };
