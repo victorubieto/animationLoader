@@ -99,8 +99,8 @@ class App {
                             let idx = this.chooseSkeleton((quats[0].length / 4) + 13); // +13 represents the endsite joints
                             idx = 0;
                             if (idx !== null) {
-                                this.skeletons[1].skeleton.visible = false;  // delete
-                                this.skeletons[1].bones.visible = false;     // delete
+                                // this.skeletons[1].skeleton.visible = false;  // delete
+                                // this.skeletons[1].bones.visible = false;     // delete
                                 this.skeletons[idx].skeleton.visible = true;  // skeletonHelper
                                 this.skeletons[idx].bones.visible = true;     // boneContainer
                                 this.mixer = new THREE.AnimationMixer(this.skeletons[idx].skeleton);
@@ -178,9 +178,9 @@ class App {
 
     loadSkeletons(defaultName) {
 
-        this.loader.load( 'data/skeletons/Kate.bvh', (result) => this.onLoadBVH( result, true, 'Kate' ) );
-        this.loader.load( 'data/skeletons/Eva.bvh', (result) => {
-            this.onLoadBVH( result, true, 'Eva' );
+        //this.loader.load( 'data/skeletons/Kate.bvh', (result) => this.onLoadBVH( result, true, 'Kate' ) );
+        this.loader.load( 'data/skeletons/create_db.bvh', (result) => {
+            this.onLoadBVH( result, true, 'kate' );
 
             // Chose desired default skeleton
             let idx = 0;
@@ -193,16 +193,22 @@ class App {
     onLoadBVH( result, getSkeleton, name ) {
 
         if (getSkeleton) { // it only gets the skeleton
+
+            let obj = new THREE.Object3D();
+
             let skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[0] );
             skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
-            skeletonHelper.root.position.set( 0, 85, 0 ); // offset so it sits in the middle of the grid
             skeletonHelper.visible = false;
-            
+
+            obj.add(skeletonHelper)
+            // Correct mixamo skeleton rotation
+            obj.rotateOnAxis (new THREE.Vector3(1,0,0), Math.PI/2);
+
             let boneContainer = new THREE.Group();
             boneContainer.add( result.skeleton.bones[0] );
             boneContainer.visible = false;
 
-            this.scene.add( skeletonHelper);
+            this.scene.add( obj );
             this.scene.add( boneContainer);
             this.skeletons.push( {name: name, skeleton: skeletonHelper, bones: boneContainer} );
         } 
