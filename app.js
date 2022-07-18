@@ -17,7 +17,6 @@ class App {
         this.renderer = null;
 
         this.mixer = null;
-        this.skeletons = [];
         this.skeletonHelper = null;
 
         this.options = {};
@@ -52,9 +51,23 @@ class App {
         this.controls.target = new THREE.Vector3( 0, 50, 0 );
         this.controls.update();
         
-        // Preload all the possible skeletons to use
-        // Choose between: [Kate, Eva]
-        this.loadSkeletons( 'Eva' );
+        this.loader.load( 'data/skeletons/create_db.bvh', (result) => {
+            this.skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[0] );
+            this.skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
+            
+            // Correct mixamo skeleton rotation
+            let obj = new THREE.Object3D();
+            obj.add( this.skeletonHelper )
+            obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
+            
+            let boneContainer = new THREE.Group();
+            boneContainer.add( result.skeleton.bones[0] );
+            
+            this.scene.add( obj );
+            this.scene.add( boneContainer );
+
+            this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
+        } );
         
         window.addEventListener( 'resize', this.onWindowResize.bind(this) );
         
@@ -68,22 +81,6 @@ class App {
             
             bgColor: "#eeeeee",
             fov: 60,
-            
-            insertBVH: () => {
-                let input = document.createElement('input');
-                input.type = 'file';
-                input.onchange = (e) => {
-                    let file = e.target.files[0];
-                    if (file.name.includes('.bvh'))
-                        LoaderUtils.loadTextFile( file, text => {
-                            const data = this.loader.parse(text);
-                            this.onLoadBVH(data);
-                        } );
-                    else
-                        alert('The extension of the file does not match with the expected input');
-                }
-                input.click();
-            },
 
             insertQuats: () => {
                 let input = document.createElement('input');
@@ -95,18 +92,8 @@ class App {
                             let quats = JSON.parse(data);
                             // Create the clip from the quaternions
                             let animationClip = this.createAnimationFromRotations('Test', quats);
-                            // Create the mixer using the skeleton
-                            let idx = this.chooseSkeleton((quats[0].length / 4) + 13); // +13 represents the endsite joints
-                            idx = 0;
-                            if (idx !== null) {
-                                // this.skeletons[1].skeleton.visible = false;  // delete
-                                // this.skeletons[1].bones.visible = false;     // delete
-                                this.skeletons[idx].skeleton.visible = true;  // skeletonHelper
-                                this.skeletons[idx].bones.visible = true;     // boneContainer
-                                this.mixer = new THREE.AnimationMixer(this.skeletons[idx].skeleton);
-                                // Apply the clip to the mixer
-                                this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
-                            } else alert('No skeleton registered that support this number of quaternions.');
+                            // Apply the clip to the mixer
+                            this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
                         });
                     else
                         alert('The extension of the file does not match with the expected input');
@@ -123,7 +110,6 @@ class App {
         // See documentation to add more options at https://github.com/dataarts/dat.gui/blob/master/API.md
         let gui = new datGui.GUI();
         
-        gui.add(this.options,'insertBVH').name('Load BVH');
         gui.add(this.options,'insertQuats').name('Load Quaternions');
         gui.add(this.options,'reset').name('Reset Pose');
     }
@@ -174,81 +160,6 @@ class App {
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize( window.innerWidth, window.innerHeight );
-    }
-
-    loadSkeletons(defaultName) {
-
-        //this.loader.load( 'data/skeletons/Kate.bvh', (result) => this.onLoadBVH( result, true, 'Kate' ) );
-        this.loader.load( 'data/skeletons/create_db.bvh', (result) => {
-            this.onLoadBVH( result, true, 'kate' );
-
-            // Chose desired default skeleton
-            let idx = 0;
-            this.skeletons.map( (v,n) => {if (v.name == defaultName) idx = n;} )
-            this.skeletons[idx].skeleton.visible = true;  // skeletonHelper
-            this.skeletons[idx].bones.visible = true;     // boneContainer
-        } );
-    }
-
-    onLoadBVH( result, getSkeleton, name ) {
-
-        if (getSkeleton) { // it only gets the skeleton
-
-            let obj = new THREE.Object3D();
-
-            let skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[0] );
-            skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
-            skeletonHelper.visible = false;
-
-            obj.add(skeletonHelper)
-            // Correct mixamo skeleton rotation
-            obj.rotateOnAxis (new THREE.Vector3(1,0,0), Math.PI/2);
-
-            let boneContainer = new THREE.Group();
-            boneContainer.add( result.skeleton.bones[0] );
-            boneContainer.visible = false;
-
-            this.scene.add( obj );
-            this.scene.add( boneContainer);
-            this.skeletons.push( {name: name, skeleton: skeletonHelper, bones: boneContainer} );
-        } 
-        else { // play animation
-            let skeleton = null;
-            let idx = this.chooseSkeleton( result.skeleton.bones.length );
-            if (idx !== null) {
-                skeleton = this.skeletons[idx].skeleton;
-                this.skeletons[idx].skeleton.visible = true;  // skeletonHelper
-                this.skeletons[idx].bones.visible = true;     // boneContainer
-                if (idx == 0) { // Fast fix --> delete later
-                    this.skeletons[1].skeleton.visible = false;  // skeletonHelper
-                    this.skeletons[1].bones.visible = false;     // boneContainer
-                } else {
-                    this.skeletons[0].skeleton.visible = false;  // skeletonHelper
-                    this.skeletons[0].bones.visible = false;     // boneContainer
-                }
-            } else {
-                console.log('The skeleton is not registered. Loading it from BVH ...');
-                skeleton = new THREE.SkeletonHelper( result.skeleton.bones[0] );
-                skeleton.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
-                skeleton.root.position.set( 0, 85, 0 ); // offset so it sits in the middle of the grid
-                this.scene.add( skeleton );
-            }
-            
-            this.mixer = new THREE.AnimationMixer( skeleton );
-            this.mixer.clipAction( result.clip ).setEffectiveWeight( 1.0 ).play();
-        }
-    }
-
-    chooseSkeleton( nBones ) {
-
-        let skeleton = null;
-        
-        for (var i = 0; i < this.skeletons.length; i++) {
-            if (this.skeletons[i].skeleton.bones.length == nBones)
-                skeleton = i;
-        }
-
-        return skeleton;
     }
 
     createAnimationFromRotations( name, quaternions_data ) {
