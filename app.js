@@ -52,6 +52,7 @@ class App {
         this.controls.update();
         
         this.loader.load( 'data/skeletons/create_db.bvh', (result) => {
+
             this.skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[0] );
             this.skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
             
@@ -68,6 +69,12 @@ class App {
 
             this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
         } );
+
+        // Used to see the landmarks
+        this.points_geometry = new THREE.BufferGeometry();
+        let material = new THREE.PointsMaterial( { color: "#ff0000", size: 3 } );
+        let points = new THREE.Points( this.points_geometry, material );
+        this.scene.add( points );
         
         window.addEventListener( 'resize', this.onWindowResize.bind(this) );
         
@@ -79,8 +86,10 @@ class App {
 
         this.options = {
             
-            bgColor: "#eeeeee",
-            fov: 60,
+            seeMesh: true,
+            seeSkeleton: true,
+            seeLandmarks: true,
+            LMcolor: "#ff0000",
 
             insertQuats: () => {
                 let input = document.createElement('input');
@@ -104,6 +113,46 @@ class App {
             reset: () => {
                 if (this.mixer)
                     this.mixer.stopAllAction();
+            },
+            
+            loadData: () => {
+                let input_lms = document.createElement('input');
+                input_lms.type = 'file';
+                input_lms.onchange = (e) => {
+                    let file = e.target.files[0];
+                    if (file.name.includes('.json'))
+                        LoaderUtils.loadTextFile( file, data => {
+                            this.lms = JSON.parse(data);
+                        });
+                    else
+                        alert('The extension of the file does not match with the expected input');
+                }
+                input_lms.click();
+                
+                let input_quats = document.createElement('input');
+                input_quats.type = 'file';
+                input_quats.onchange = (e) => {
+                    let file = e.target.files[0];
+                    if (file.name.includes('.json'))
+                        LoaderUtils.loadTextFile( file, data => {
+                            let quats = JSON.parse(data);
+                            // Create the clip from the quaternions
+                            let animationClip = this.createAnimationFromRotations('Test', quats);
+                            // Apply the clip to the mixer
+                            this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                        });
+                    else
+                        alert('The extension of the file does not match with the expected input');
+                }
+                input_quats.click();
+            },
+
+            setCamera: () => {
+                this.camera.fov = 55;
+                this.camera.updateProjectionMatrix();
+                this.camera.position.set( 0.05 * 100, 1.8 * 100, 3.1 * 100 );
+                this.controls.target = new THREE.Vector3( -0.0 * 100, 0.9848077297210693 * 100, -0.17364822328090668 * 100 );
+                this.controls.update();
             }
         };
         
@@ -112,6 +161,35 @@ class App {
         
         gui.add(this.options,'insertQuats').name('Load Quaternions');
         gui.add(this.options,'reset').name('Reset Pose');
+
+        let folder = gui.addFolder('Avaluate Dataset');
+
+        folder.add(this.options,'loadData').name('Load Data');
+        folder.add(this.options,'setCamera').name('Set to Dataset Camera');
+        folder.addColor(this.options, 'LMcolor').name('Landmarks Color').listen().onChange( () => {
+
+            function hexToRgb(hex) {
+                let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+                return result ? {
+                    r: parseInt(result[1], 16),
+                    g: parseInt(result[2], 16),
+                    b: parseInt(result[3], 16)
+                } : null;
+            }
+            
+            if (this.scene.children[3].material)
+                var rgb = hexToRgb(this.options.LMcolor);
+                this.scene.children[3].material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
+        } );
+        folder.add(this.options,'seeMesh').name('Show Avatar').listen().onChange( () => {
+            //this.scene.children[1].visible = this.options.seeMesh;
+        } );
+        folder.add(this.options,'seeSkeleton').name('Show Skeleton').listen().onChange( () => {
+            this.scene.children[1].visible = this.options.seeSkeleton;
+        } );
+        folder.add(this.options,'seeLandmarks').name('Show Landmarks').listen().onChange( () => {
+            this.scene.children[3].visible = this.options.seeLandmarks;
+        } );
     }
     
     onDrop( event ) {
@@ -149,7 +227,34 @@ class App {
 
         const delta = this.clock.getDelta();
 
-        if ( this.mixer ) this.mixer.update( delta );
+        if ( this.mixer ) {
+            this.mixer.update( delta );
+            
+            if ( this.lms && this.mixer._actions[0] ) {
+                let curr_time = this.mixer._actions[0].time;
+                let dur = this.mixer._actions[0]._clip.duration;
+                let iter = curr_time / dur * this.lms.length;
+                
+                if (iter != this.prev_iter) {
+                    let currLM = this.lms[Math.floor(iter)];
+                    const vertices = [];
+    
+                    for (let i = 0; i < currLM.length; i=i+2) {
+                        let x = currLM[i];
+                        let y = currLM[i+1];
+    
+                        x = x * 2 - 1;
+                        y = y * 2 - 1;
+    
+                        vertices.push( x * 16 * 12 + 5, -y * 9 * 12 + 125, 0 );
+                    }
+
+                    this.points_geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+                }
+            
+                this.prev_iter = iter;
+            }
+        } 
 
         this.renderer.render( this.scene, this.camera );
     }
@@ -217,6 +322,5 @@ class App {
 
 let app = new App();
 app.init();
-
 
 export { app };
