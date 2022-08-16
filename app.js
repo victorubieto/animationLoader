@@ -25,12 +25,12 @@ class App {
     init() {
 
         this.camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 1000 );
-        this.camera.position.set( 0, 200, 300 );
+        this.camera.position.set( 0, 2, 3 );
 
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color( 0xeeeeee );
 
-        this.scene.add( new THREE.GridHelper( 400, 10 ) );
+        this.scene.add( new THREE.GridHelper( 10, 10 ) );
 
         // renderer
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
@@ -46,12 +46,12 @@ class App {
         canvas.ondrop = (e) => this.onDrop(e);
         
         this.controls = new OrbitControls( this.camera, canvas );
-        this.controls.minDistance = 50;
-        this.controls.maxDistance = 750;
-        this.controls.target = new THREE.Vector3( 0, 50, 0 );
+        this.controls.minDistance = 0.1;
+        this.controls.maxDistance = 10;
+        this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
         this.controls.update();
         
-        this.loader.load( 'data/skeletons/create_db.bvh', (result) => {
+        this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
             this.skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[0] );
             this.skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
@@ -72,9 +72,17 @@ class App {
 
         // Used to see the landmarks
         this.points_geometry = new THREE.BufferGeometry();
-        let material = new THREE.PointsMaterial( { color: "#ff0000", size: 3 } );
+        let material = new THREE.PointsMaterial( { color: "#ff0000", size: 0.03 } );
         let points = new THREE.Points( this.points_geometry, material );
+        points.frustumCulled = false;
         this.scene.add( points );
+
+        let blenderCamera = new THREE.PerspectiveCamera( 55, 1280/720, 0.1, 1000 );
+        blenderCamera.position.set( 0.05, 1.8, 3.1 );
+        let view_matrix = new THREE.Matrix4();
+        view_matrix = view_matrix.lookAt(new THREE.Vector3(0.05, 1.8, 3.1), new THREE.Vector3(-0.0, 0.9848077297210693, -0.17364822328090668), new THREE.Vector3(0,1,0));
+        this.inv_view_matrix = view_matrix.invert();
+        this.inv_projection_matrix = blenderCamera.projectionMatrixInverse;
         
         window.addEventListener( 'resize', this.onWindowResize.bind(this) );
         
@@ -150,8 +158,8 @@ class App {
             setCamera: () => {
                 this.camera.fov = 55;
                 this.camera.updateProjectionMatrix();
-                this.camera.position.set( 0.05 * 100, 1.8 * 100, 3.1 * 100 );
-                this.controls.target = new THREE.Vector3( -0.0 * 100, 0.9848077297210693 * 100, -0.17364822328090668 * 100 );
+                this.camera.position.set( 0.05, 1.8, 3.1 ); // convert from cm to m
+                this.controls.target = new THREE.Vector3( -0.0, 0.9848077297210693, -0.17364822328090668 );
                 this.controls.update();
             }
         };
@@ -162,7 +170,7 @@ class App {
         gui.add(this.options,'insertQuats').name('Load Quaternions');
         gui.add(this.options,'reset').name('Reset Pose');
 
-        let folder = gui.addFolder('Avaluate Dataset');
+        let folder = gui.addFolder('Evaluate Dataset');
 
         folder.add(this.options,'loadData').name('Load Data');
         folder.add(this.options,'setCamera').name('Set to Dataset Camera');
@@ -185,10 +193,10 @@ class App {
             //this.scene.children[1].visible = this.options.seeMesh;
         } );
         folder.add(this.options,'seeSkeleton').name('Show Skeleton').listen().onChange( () => {
-            this.scene.children[1].visible = this.options.seeSkeleton;
+            this.scene.children[2].visible = this.options.seeSkeleton;
         } );
         folder.add(this.options,'seeLandmarks').name('Show Landmarks').listen().onChange( () => {
-            this.scene.children[3].visible = this.options.seeLandmarks;
+            this.scene.children[1].visible = this.options.seeLandmarks;
         } );
     }
     
@@ -227,6 +235,9 @@ class App {
 
         const delta = this.clock.getDelta();
 
+        //console.log(this.inv_view_matrix.elements)
+        //console.log(this.inv_projection_matrix.elements)
+
         if ( this.mixer ) {
             this.mixer.update( delta );
             
@@ -245,8 +256,19 @@ class App {
     
                         x = x * 2 - 1;
                         y = y * 2 - 1;
-    
-                        vertices.push( x * 16 * 12 + 5, -y * 9 * 12 + 125, 0 );
+                        let v = new THREE.Vector4(x, y, 0, 2);
+                        v.x = v.x * v.w;
+                        v.y = v.y * v.w;
+                        v.z = v.z * v.w;
+                        let v_view_space = v.clone(); 
+                        this.inv_projection_matrix.multiplyVector3(v_view_space);
+                        let v_world_space = v_view_space.clone();
+                        this.inv_view_matrix.multiplyVector3(v_world_space);
+                        // v_world_space.x = v_world_space.x / v_world_space.w;
+                        // v_world_space.y = v_world_space.y / v_world_space.w;
+                        // v_world_space.z = v_world_space.z / v_world_space.w;
+
+                        vertices.push( v_world_space.x + 0.0138, (1-v_world_space.y) + 0.73, 0 );
                     }
 
                     this.points_geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
