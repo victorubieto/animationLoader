@@ -1,6 +1,7 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
 import * as datGui from 'https://cdn.skypack.dev/dat.gui';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
+import { clone } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/utils/SkeletonUtils.js';
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
 import { LoaderUtils } from "./utils.js";
 
@@ -53,8 +54,9 @@ class App {
         
         this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
-            this.skeletonHelper = new THREE.SkeletonHelper( result.skeleton.bones[0] );
-            this.skeletonHelper.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
+            let skinnedMesh = result.skeleton;
+            this.skeletonHelper = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
+            this.skeletonHelper.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
             
             // Correct mixamo skeleton rotation
             let obj = new THREE.Object3D();
@@ -70,6 +72,26 @@ class App {
             this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
         } );
 
+        this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
+
+            this.skeletonHelperPred = new THREE.SkeletonHelper( result.skeleton.bones[0] );
+            this.skeletonHelperPred.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
+            
+            let obj = new THREE.Object3D();
+            obj.add( this.skeletonHelperPred )
+            obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
+            obj.position.x = 2;
+            obj.visible = false;
+            
+            let boneContainer = new THREE.Group();
+            boneContainer.add( result.skeleton.bones[0] );
+
+            this.scene.add( obj );
+            this.scene.add( boneContainer );
+        
+            this.mixerPred = new THREE.AnimationMixer( this.skeletonHelperPred );
+        } );
+        
         // Used to see the landmarks
         this.points_geometry = new THREE.BufferGeometry();
         let material = new THREE.PointsMaterial( { color: "#ff0000", size: 0.03 } );
@@ -118,12 +140,33 @@ class App {
                 input.click();
             },
 
-            reset: () => {
+            rest: () => {
                 if (this.mixer)
                     this.mixer.stopAllAction();
+                if (this.mixerPred)
+                    this.mixerPred.stopAllAction();
             },
             
-            loadData: () => {
+            loadGT: () => {
+                let input_quats = document.createElement('input');
+                input_quats.type = 'file';
+                input_quats.onchange = (e) => {
+                    let file = e.target.files[0];
+                    if (file.name.includes('.json'))
+                        LoaderUtils.loadTextFile( file, data => {
+                            let quats = JSON.parse(data);
+                            // Create the clip from the quaternions
+                                let animationClip = this.createAnimationFromRotations('Test', quats);
+                                // Apply the clip to the mixer
+                                this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                        });
+                    else
+                        alert('The extension of the file does not match with the expected input');
+                }
+                input_quats.click();
+            },
+
+            loadLMs: () => {
                 let input_lms = document.createElement('input');
                 input_lms.type = 'file';
                 input_lms.onchange = (e) => {
@@ -136,10 +179,12 @@ class App {
                         alert('The extension of the file does not match with the expected input');
                 }
                 input_lms.click();
+            },
                 
-                let input_quats = document.createElement('input');
-                input_quats.type = 'file';
-                input_quats.onchange = (e) => {
+            loadPred: () => {
+                let input_pred = document.createElement('input');
+                input_pred.type = 'file';
+                input_pred.onchange = (e) => {
                     let file = e.target.files[0];
                     if (file.name.includes('.json'))
                         LoaderUtils.loadTextFile( file, data => {
@@ -147,20 +192,71 @@ class App {
                             // Create the clip from the quaternions
                             let animationClip = this.createAnimationFromRotations('Test', quats);
                             // Apply the clip to the mixer
-                            this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                            this.mixerPred.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                            this.scene.children[4].visible = true;
                         });
                     else
                         alert('The extension of the file does not match with the expected input');
                 }
-                input_quats.click();
+                input_pred.click();
             },
-
-            setCamera: () => {
+            
+            resetCamera: () => {
                 this.camera.fov = 55;
                 this.camera.updateProjectionMatrix();
                 this.camera.position.set( 0.05, 1.8, 3.1 ); // convert from cm to m
                 this.controls.target = new THREE.Vector3( -0.0, 0.9848077297210693, -0.17364822328090668 );
                 this.controls.update();
+            },
+
+            resetAnimation: () => {
+                if (this.mixer)
+                    this.mixer.setTime(0);
+                if (this.mixerPred)
+                    this.mixerPred.setTime(0);
+            },
+
+            evaluate: () => {
+                if (this.mixer._actions.length == 0 || this.mixerPred._actions.length == 0) {
+                    confirm("You need to upload both the Ground Truth and the Prediction animations in order to evaluate the error.");
+                    return;
+                }
+
+                let dist = []; // array of distances per bone for all times
+                for (let i = 0; i < this.mixer._root.bones.length; i++)
+                    dist[i] = [];
+
+                // Loop the animation for all times
+                const times = this.mixer._actions[0]._clip.tracks[0].times
+                for (let t in times) {
+                    this.mixer.setTime(times[t]);
+                    this.mixerPred.setTime(times[t]);
+
+                    let time_dist = []; // array of distances per bone in one time
+                    for (let bone in this.mixer._root.bones) {
+                        let posGT = new THREE.Vector3();
+                        let posPred = new THREE.Vector3();
+                        this.mixer._root.bones[bone].getWorldPosition( posGT );
+                        this.mixerPred._root.bones[bone].getWorldPosition( posPred );
+                        
+                        // Save its distance in cm
+                        time_dist.push( posGT.distanceTo(posPred) * 100 );
+                    }
+
+                    time_dist.every( (el, idx) => dist[idx].push(el) );
+                }
+            
+                // Download distances 
+                function download(content, fileName, contentType) {
+                    let a = document.createElement("a");
+                    let file = new Blob([content], {type: contentType});
+                    a.href = URL.createObjectURL(file);
+                    a.download = fileName;
+                    a.click();
+                };
+
+                let file = JSON.stringify(dist);
+                download(file, 'EvaluationDistances.json', 'application/json');
             }
         };
         
@@ -168,13 +264,20 @@ class App {
         let gui = new datGui.GUI();
         
         gui.add(this.options,'insertQuats').name('Load Quaternions');
-        gui.add(this.options,'reset').name('Reset Pose');
+        gui.add(this.options,'rest').name('Rest Pose');
 
         let folder = gui.addFolder('Evaluate Dataset');
+        
+        folder.add(this.options,'resetCamera').name('Reset Camera');
+        folder.add(this.options,'resetAnimation').name('Reset Animation');
 
-        folder.add(this.options,'loadData').name('Load Data');
-        folder.add(this.options,'setCamera').name('Set to Dataset Camera');
-        folder.addColor(this.options, 'LMcolor').name('Landmarks Color').listen().onChange( () => {
+        folder.add(this.options,'loadGT').name('Load Ground Truth');
+        folder.add(this.options,'loadLMs').name('Load LandMarks');
+        folder.add(this.options,'loadPred').name('Load Prediction');
+        
+        folder.add(this.options,'evaluate').name('Evaluate Prediction');
+
+        folder.addColor(this.options,'LMcolor').name('Landmarks Color').listen().onChange( () => {
 
             function hexToRgb(hex) {
                 let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -185,9 +288,9 @@ class App {
                 } : null;
             }
             
-            if (this.scene.children[3].material)
+            if (this.scene.children[1].material)
                 var rgb = hexToRgb(this.options.LMcolor);
-                this.scene.children[3].material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
+                this.scene.children[1].material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
         } );
         folder.add(this.options,'seeMesh').name('Show Avatar').listen().onChange( () => {
             //this.scene.children[1].visible = this.options.seeMesh;
@@ -235,12 +338,10 @@ class App {
 
         const delta = this.clock.getDelta();
 
-        //console.log(this.inv_view_matrix.elements)
-        //console.log(this.inv_projection_matrix.elements)
-
         if ( this.mixer ) {
             this.mixer.update( delta );
-            
+            if ( this.mixerPred ) this.mixerPred.update( delta );
+
             if ( this.lms && this.mixer._actions[0] ) {
                 let curr_time = this.mixer._actions[0].time;
                 let dur = this.mixer._actions[0]._clip.duration;
@@ -256,19 +357,20 @@ class App {
     
                         x = x * 2 - 1;
                         y = y * 2 - 1;
+
                         let v = new THREE.Vector4(x, y, 0, 2);
                         v.x = v.x * v.w;
                         v.y = v.y * v.w;
                         v.z = v.z * v.w;
                         let v_view_space = v.clone(); 
-                        this.inv_projection_matrix.multiplyVector3(v_view_space);
+                        v_view_space.applyMatrix4(this.inv_projection_matrix);
                         let v_world_space = v_view_space.clone();
-                        this.inv_view_matrix.multiplyVector3(v_world_space);
+                        v_world_space.applyMatrix4(this.inv_view_matrix);
                         // v_world_space.x = v_world_space.x / v_world_space.w;
                         // v_world_space.y = v_world_space.y / v_world_space.w;
                         // v_world_space.z = v_world_space.z / v_world_space.w;
 
-                        vertices.push( v_world_space.x + 0.0138, (1-v_world_space.y) + 0.73, 0 );
+                        vertices.push( v_world_space.x + 0.0138, (1 - v_world_space.y) + 0.74, 0 );
                     }
 
                     this.points_geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
