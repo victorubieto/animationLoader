@@ -222,9 +222,12 @@ class App {
                     return;
                 }
 
-                let dist = []; // array of distances per bone for all times
-                for (let i = 0; i < this.mixer._root.bones.length; i++)
-                    dist[i] = [];
+                let dist_list = []; // array of distances per bone for all times
+                let pos_list = []; // array of distances per bone for all times
+                for (let i = 0; i < this.mixer._root.bones.length; i++) {
+                    dist_list[i] = [];
+                    pos_list[i] = [[[],[],[]],[[],[],[]]]; // gt, pred -> x, y, z channels
+                }
 
                 // Loop the animation for all times
                 const times = this.mixer._actions[0]._clip.tracks[0].times
@@ -233,20 +236,35 @@ class App {
                     this.mixerPred.setTime(times[t]);
 
                     let time_dist = []; // array of distances per bone in one time
+                    let time_pos = [[[],[],[]],[[],[],[]]]; // array of the positions of bones in one time (gt((x),(y),(z))),(pred((x),(y),(z)))
                     for (let bone in this.mixer._root.bones) {
                         let posGT = new THREE.Vector3();
                         let posPred = new THREE.Vector3();
                         this.mixer._root.bones[bone].getWorldPosition( posGT );
                         this.mixerPred._root.bones[bone].getWorldPosition( posPred );
                         
+                        // Save the positions in cm
+                        time_pos[0][0].push(posGT.x * 100);
+                        time_pos[0][1].push(posGT.y * 100);
+                        time_pos[0][2].push(posGT.z * 100);
+                        time_pos[1][0].push(posPred.x * 100);
+                        time_pos[1][1].push(posPred.y * 100);
+                        time_pos[1][2].push(posPred.z * 100);
+
                         // Save its distance in cm
                         time_dist.push( posGT.distanceTo(posPred) * 100 );
                     }
 
-                    time_dist.every( (el, idx) => dist[idx].push(el) );
+                    time_pos.every( (gt_pred, type_idx) =>
+                        gt_pred.every( (axis_el, axis_idx) =>
+                            axis_el.every( (el, idx) => pos_list[idx][type_idx][axis_idx].push(el) )
+                        ) 
+                    );
+                    
+                    time_dist.every( (el, idx) => dist_list[idx].push(el) );
                 }
             
-                // Download distances 
+                // Download data
                 function download(content, fileName, contentType) {
                     let a = document.createElement("a");
                     let file = new Blob([content], {type: contentType});
@@ -255,8 +273,10 @@ class App {
                     a.click();
                 };
 
-                let file = JSON.stringify(dist);
-                download(file, 'EvaluationDistances.json', 'application/json');
+                let distances_file = JSON.stringify(dist_list);
+                download(distances_file, 'EvaluationDistances.json', 'application/json');
+                let positions_file = JSON.stringify(pos_list);
+                download(positions_file, 'EvaluationPositions.json', 'application/json');
             }
         };
         
