@@ -99,11 +99,14 @@ class App {
         points.frustumCulled = false;
         this.scene.add( points );
 
-        let blenderCamera = new THREE.PerspectiveCamera( 55, 1280/720, 0.1, 1000 );
+        // blender (fov 55) works with horizontal and threejs with vertical fov => 55 / (1280/720) = 30.9375
+        let blenderCamera = new THREE.PerspectiveCamera( 30.9375, 1280/720, 0.1, 1000 );
         blenderCamera.position.set( 0.05, 1.8, 3.1 );
-        let view_matrix = new THREE.Matrix4();
-        view_matrix = view_matrix.lookAt(new THREE.Vector3(0.05, 1.8, 3.1), new THREE.Vector3(-0.0, 0.9848077297210693, -0.17364822328090668), new THREE.Vector3(0,1,0));
-        this.inv_view_matrix = view_matrix.invert();
+        blenderCamera.updateMatrixWorld()
+        blenderCamera.lookAt(0.05, 1.28381, 0.172517);
+        blenderCamera.updateMatrixWorld()
+        this.inv_view_matrix = blenderCamera.matrixWorld; // camera view inverted
+        blenderCamera.updateProjectionMatrix();
         this.inv_projection_matrix = blenderCamera.projectionMatrixInverse;
         
         window.addEventListener( 'resize', this.onWindowResize.bind(this) );
@@ -202,10 +205,11 @@ class App {
             },
             
             resetCamera: () => {
-                this.camera.fov = 55;
+                this.camera.fov = 30.9375;
                 this.camera.updateProjectionMatrix();
+                this.camera.aspect = 1280/720
                 this.camera.position.set( 0.05, 1.8, 3.1 ); // convert from cm to m
-                this.controls.target = new THREE.Vector3( -0.0, 0.9848077297210693, -0.17364822328090668 );
+                this.controls.target = new THREE.Vector3( 0.05, 1.28381, 0.172517 );
                 this.controls.update();
             },
 
@@ -376,21 +380,20 @@ class App {
                         let y = currLM[i+1];
     
                         x = x * 2 - 1;
-                        y = y * 2 - 1;
+                        y = -y * 2 + 1;
 
-                        let v = new THREE.Vector4(x, y, 0, 2);
-                        v.x = v.x * v.w;
-                        v.y = v.y * v.w;
-                        v.z = v.z * v.w;
+                        // z scales exponentially, just chosed a nice value
+                        let v = new THREE.Vector4(x, y, 0.935, 1);
+
                         let v_view_space = v.clone(); 
                         v_view_space.applyMatrix4(this.inv_projection_matrix);
                         let v_world_space = v_view_space.clone();
                         v_world_space.applyMatrix4(this.inv_view_matrix);
-                        // v_world_space.x = v_world_space.x / v_world_space.w;
-                        // v_world_space.y = v_world_space.y / v_world_space.w;
-                        // v_world_space.z = v_world_space.z / v_world_space.w;
+                        v_world_space.x = v_world_space.x / v_world_space.w;
+                        v_world_space.y = v_world_space.y / v_world_space.w;
+                        v_world_space.z = v_world_space.z / v_world_space.w;
 
-                        vertices.push( v_world_space.x + 0.0138, (1 - v_world_space.y) + 0.74, 0 );
+                        vertices.push( v_world_space.x, v_world_space.y, v_world_space.z );
                     }
 
                     this.points_geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
