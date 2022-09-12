@@ -3,6 +3,7 @@ import * as datGui from 'https://cdn.skypack.dev/dat.gui';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
 import { clone } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/utils/SkeletonUtils.js';
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
+import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/GLTFLoader.js';
 import { LoaderUtils } from "./utils.js";
 
 class App {
@@ -10,7 +11,8 @@ class App {
     constructor() {
         
         this.clock = new THREE.Clock();
-        this.loader = new BVHLoader();
+        this.BVHLoader = new BVHLoader();
+        this.GLTFLoader = new GLTFLoader();
 
         this.camera = null;
         this.controls = null;
@@ -51,17 +53,29 @@ class App {
         this.controls.maxDistance = 10;
         this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
         this.controls.update();
+
+        function printBones(bvhBone, glbBone) {
+            console.log(bvhBone.name + ": (" + bvhBone.position.x + ", " + bvhBone.position.y + ", " + bvhBone.position.z + ") - (" + glbBone.position.x + ", " + glbBone.position.y + ", " + glbBone.position.z + ")")
+            for (var i = 0; i < bvhBone.children.length; ++i) {
+                printBones(bvhBone.children[i], glbBone.children[i])
+            }
+        }
         
-        this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
+        this.BVHLoader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
             let skinnedMesh = result.skeleton;
             this.skeletonHelper = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
             this.skeletonHelper.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
             
+            // console.log("BVH")
+            // console.log("-----------------------")
+            // printBones(this.skeletonHelper.bones[0])
+            // console.log("-----------------------")
+
             // Correct mixamo skeleton rotation
             let obj = new THREE.Object3D();
             obj.add( this.skeletonHelper )
-            obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
+            //obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
             
             let boneContainer = new THREE.Group();
             boneContainer.add( result.skeleton.bones[0] );
@@ -72,19 +86,25 @@ class App {
             this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
         } );
 
-        this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
+        this.GLTFLoader.load( 'data/test1.glb', (result) => {
 
-            this.skeletonHelperPred = new THREE.SkeletonHelper( result.skeleton.bones[0] );
-            this.skeletonHelperPred.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
+            let model = result.scene.children[0];
+
+            this.skeletonHelperPred = new THREE.SkeletonHelper( model );
+            this.skeletonHelperPred.skeleton = new THREE.Skeleton( this.skeletonHelperPred.bones );; // allow animation mixer to bind to THREE.SkeletonHelper directly
             
+            console.log("-----------------------")
+            printBones(this.skeletonHelper.bones[0], this.skeletonHelperPred.bones[0])
+            console.log("-----------------------")
+
             let obj = new THREE.Object3D();
             obj.add( this.skeletonHelperPred )
-            obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
+            //obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
             obj.position.x = 2;
-            obj.visible = false;
+            obj.visible = true;
             
             let boneContainer = new THREE.Group();
-            boneContainer.add( result.skeleton.bones[0] );
+            boneContainer.add( this.skeletonHelperPred.bones[0] );
 
             this.scene.add( obj );
             this.scene.add( boneContainer );
@@ -350,7 +370,7 @@ class App {
             }
 
             LoaderUtils.loadTextFile( file, text => {
-                const data = this.loader.parse( text );
+                const data = this.BVHLoader.parse( text );
                 this.onLoadBVH(data) ;
             });
         }
