@@ -1,7 +1,6 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
 import * as datGui from 'https://cdn.skypack.dev/dat.gui';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
-import { clone } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/utils/SkeletonUtils.js';
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
 import { LoaderUtils } from "./utils.js";
 
@@ -72,6 +71,7 @@ class App {
             this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
         } );
 
+        // Repeat for the prediction skeleton
         this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
             this.skeletonHelperPred = new THREE.SkeletonHelper( result.skeleton.bones[0] );
@@ -88,6 +88,11 @@ class App {
 
             this.scene.add( obj );
             this.scene.add( boneContainer );
+
+            // Change the color of the prediction skeleton
+            // this.scene.children[2].children[0].material.color.r = 1;
+            // this.scene.children[2].children[0].material.color.g = 0;
+            // this.scene.children[2].children[0].material.color.b = 0;
         
             this.mixerPred = new THREE.AnimationMixer( this.skeletonHelperPred );
         } );
@@ -296,7 +301,7 @@ class App {
         folder.add(this.options,'resetAnimation').name('Reset Animation');
 
         folder.add(this.options,'loadGT').name('Load Ground Truth');
-        folder.add(this.options,'loadLMs').name('Load LandMarks');
+        folder.add(this.options,'loadLMs').name('Load Landmarks');
         folder.add(this.options,'loadPred').name('Load Prediction');
         
         folder.add(this.options,'evaluate').name('Evaluate Prediction');
@@ -366,6 +371,7 @@ class App {
             this.mixer.update( delta );
             if ( this.mixerPred ) this.mixerPred.update( delta );
 
+            // Inverse projection to locate landmarks in the space
             if ( this.lms && this.mixer._actions[0] ) {
                 let curr_time = this.mixer._actions[0].time;
                 let dur = this.mixer._actions[0]._clip.duration;
