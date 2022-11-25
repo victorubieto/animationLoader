@@ -1,7 +1,7 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
-import * as datGui from 'https://cdn.skypack.dev/dat.gui';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
+import { GUI } from 'https://cdn.skypack.dev/lil-gui'
 import { LoaderUtils } from "./utils.js";
 
 class App {
@@ -18,32 +18,25 @@ class App {
 
         this.mixer = null;
         this.skeletonHelper = null;
-
-        this.options = {};
     }
 
     init() {
 
-        this.camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.1, 1000 );
-        this.camera.position.set( 0, 2, 3 );
-
+        // Init scene, renderer and add to body element
         this.scene = new THREE.Scene();
         this.scene.background = new THREE.Color( 0xeeeeee );
-
-        this.scene.add( new THREE.GridHelper( 10, 10 ) );
-
-        // renderer
+        this.scene.add( new THREE.GridHelper(10, 10) );
+        
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
         this.renderer.setPixelRatio( window.devicePixelRatio );
         this.renderer.setSize( window.innerWidth, window.innerHeight );
-
+        
         const canvas = this.renderer.domElement;
-
         document.body.appendChild( canvas );
 
-        canvas.ondragover = () => {return false};
-        canvas.ondragend = () => {return false};
-        canvas.ondrop = (e) => this.onDrop(e);
+        // Set up camera
+        this.camera = new THREE.PerspectiveCamera( 60, window.innerWidth / window.innerHeight, 0.01, 100 );
+        this.camera.position.set( 0, 2, 3 );
         
         this.controls = new OrbitControls( this.camera, canvas );
         this.controls.minDistance = 0.1;
@@ -51,6 +44,7 @@ class App {
         this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
         this.controls.update();
         
+        // Add skeletons in the scene
         this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
             let skinnedMesh = result.skeleton;
@@ -67,10 +61,10 @@ class App {
             
             this.scene.add( obj );
             this.scene.add( boneContainer );
-
+            
             this.mixer = new THREE.AnimationMixer( this.skeletonHelper );
         } );
-
+        
         // Repeat for the prediction skeleton
         this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
@@ -85,26 +79,25 @@ class App {
             
             let boneContainer = new THREE.Group();
             boneContainer.add( result.skeleton.bones[0] );
-
+            
             this.scene.add( obj );
             this.scene.add( boneContainer );
-
+            
             // Change the color of the prediction skeleton
-            // this.scene.children[2].children[0].material.color.r = 1;
-            // this.scene.children[2].children[0].material.color.g = 0;
-            // this.scene.children[2].children[0].material.color.b = 0;
-        
+            //this.scene.children[2].children[0].material.color.r = 1;
+            //this.scene.children[2].children[0].material.color.g = 0;
+            //this.scene.children[2].children[0].material.color.b = 0;
+            
             this.mixerPred = new THREE.AnimationMixer( this.skeletonHelperPred );
         } );
         
-        // Used to see the landmarks
-        this.points_geometry = new THREE.BufferGeometry();
-        let material = new THREE.PointsMaterial( { color: "#ff0000", size: 0.03 } );
-        let points = new THREE.Points( this.points_geometry, material );
-        points.frustumCulled = false;
-        this.scene.add( points );
-
-        // blender (fov 55) works with horizontal and threejs with vertical fov => 55 / (1280/720) = 30.9375
+        // Add auxiliary points to visualize the landmarks
+        this.points = new THREE.Points( new THREE.BufferGeometry(), new THREE.PointsMaterial( { color: "#ff0000", size: 0.025 } ) );
+        this.points.frustumCulled = false;
+        this.scene.add( this.points );
+        
+        // Get camera matrices
+        // Blender (fov 55) works with horizontal and threejs with vertical fov => 55 / (1280/720) = 30.9375
         let blenderCamera = new THREE.PerspectiveCamera( 30.9375, 1280/720, 0.1, 1000 );
         blenderCamera.position.set( 0.05, 1.8, 3.1 );
         blenderCamera.updateMatrixWorld()
@@ -114,16 +107,24 @@ class App {
         blenderCamera.updateProjectionMatrix();
         this.inv_projection_matrix = blenderCamera.projectionMatrixInverse;
         
+        // Set listeners and events
         window.addEventListener( 'resize', this.onWindowResize.bind(this) );
+        canvas.ondragover = () => {return false};
+        canvas.ondragend = () => {return false};
+        canvas.ondrop = (e) => this.onDrop(e);
         
+        // Start loop
         this.initGUI();
         this.animate();
     }
 
     initGUI() {
 
-        this.options = {
-            
+        //let that = this;
+
+        let gui = new GUI();
+
+        let options = {
             seeMesh: true,
             seeSkeleton: true,
             seeLandmarks: true,
@@ -209,11 +210,12 @@ class App {
                 input_pred.click();
             },
             
+            // this function sets the camera as the virtual camera used to generate the dataset
             resetCamera: () => {
                 this.camera.fov = 30.9375;
-                this.camera.updateProjectionMatrix();
                 this.camera.aspect = 1280/720
-                this.camera.position.set( 0.05, 1.8, 3.1 ); // convert from cm to m
+                this.camera.position.set( 0.05, 1.8, 3.1 );
+                this.camera.updateProjectionMatrix();
                 this.controls.target = new THREE.Vector3( 0.05, 1.28381, 0.172517 );
                 this.controls.update();
             },
@@ -288,25 +290,22 @@ class App {
                 download(positions_file, 'EvaluationPositions.json', 'application/json');
             }
         };
-        
-        // See documentation to add more options at https://github.com/dataarts/dat.gui/blob/master/API.md
-        let gui = new datGui.GUI();
-        
-        gui.add(this.options,'insertQuats').name('Load Quaternions');
-        gui.add(this.options,'rest').name('Rest Pose');
+
+        gui.add(options,'insertQuats').name('Load Quaternions');
+        gui.add(options,'rest').name('Rest Pose');
 
         let folder = gui.addFolder('Evaluate Dataset');
         
-        folder.add(this.options,'resetCamera').name('Reset Camera');
-        folder.add(this.options,'resetAnimation').name('Reset Animation');
+        folder.add(options,'resetCamera').name('Reset Camera');
+        folder.add(options,'resetAnimation').name('Reset Animation');
 
-        folder.add(this.options,'loadGT').name('Load Ground Truth');
-        folder.add(this.options,'loadLMs').name('Load Landmarks');
-        folder.add(this.options,'loadPred').name('Load Prediction');
+        folder.add(options,'loadGT').name('Load Ground Truth');
+        folder.add(options,'loadLMs').name('Load Landmarks');
+        folder.add(options,'loadPred').name('Load Prediction');
         
-        folder.add(this.options,'evaluate').name('Evaluate Prediction');
+        folder.add(options,'evaluate').name('Evaluate Prediction');
 
-        folder.addColor(this.options,'LMcolor').name('Landmarks Color').listen().onChange( () => {
+        folder.addColor(options,'LMcolor').name('Landmarks Color').listen().onChange( (value) => {
 
             function hexToRgb(hex) {
                 let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -318,47 +317,19 @@ class App {
             }
             
             if (this.scene.children[1].material)
-                var rgb = hexToRgb(this.options.LMcolor);
+                var rgb = hexToRgb(value);
                 this.scene.children[1].material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
         } );
-        folder.add(this.options,'seeMesh').name('Show Avatar').listen().onChange( () => {
-            //this.scene.children[1].visible = this.options.seeMesh;
+        // folder.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
+        //     this.scene.children[1].visible = value;
+        // } );
+        folder.add(options,'seeSkeleton').name('Show Skeleton').listen().onChange( (value) => {
+            this.scene.children[2].visible = value;
         } );
-        folder.add(this.options,'seeSkeleton').name('Show Skeleton').listen().onChange( () => {
-            this.scene.children[2].visible = this.options.seeSkeleton;
+        folder.add(options,'seeLandmarks').name('Show Landmarks').listen().onChange( (value) => {
+            this.scene.children[1].visible = value;
         } );
-        folder.add(this.options,'seeLandmarks').name('Show Landmarks').listen().onChange( () => {
-            this.scene.children[1].visible = this.options.seeLandmarks;
-        } );
-    }
-    
-    onDrop( event ) {
 
-        event.preventDefault();
-        event.stopPropagation();
-
-        const files = event.dataTransfer.files;
-
-        if(!files.length)
-            return;
-
-        for (let i = 0; i < files.length; i++) {
-            let file = files[i],
-            name = file.name,
-            tokens = name.split("."),
-            extension = tokens[tokens.length-1].toLowerCase(),
-            valid_extensions = [ 'bvh' ];
-            
-            if (valid_extensions.lastIndexOf(extension) < 0) {
-                alert("Invalid file extension. Extension was '" + extension + "'");
-                return;
-            }
-
-            LoaderUtils.loadTextFile( file, text => {
-                const data = this.loader.parse( text );
-                this.onLoadBVH(data) ;
-            });
-        }
     }
 
     animate() {
@@ -389,7 +360,7 @@ class App {
                         y = -y * 2 + 1;
 
                         // z scales exponentially, just chosed a nice value
-                        let v = new THREE.Vector4(x, y, 0.935, 1);
+                        let v = new THREE.Vector4(x, y, 0.93, 1);
 
                         let v_view_space = v.clone(); 
                         v_view_space.applyMatrix4(this.inv_projection_matrix);
@@ -402,7 +373,7 @@ class App {
                         vertices.push( v_world_space.x, v_world_space.y, v_world_space.z );
                     }
 
-                    this.points_geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
+                    this.points.geometry.setAttribute( 'position', new THREE.Float32BufferAttribute( vertices, 3 ) );
                 }
             
                 this.prev_iter = iter;
@@ -410,6 +381,35 @@ class App {
         } 
 
         this.renderer.render( this.scene, this.camera );
+    }
+
+    onDrop( event ) {
+
+        event.preventDefault();
+        event.stopPropagation();
+
+        const files = event.dataTransfer.files;
+
+        if(!files.length)
+            return;
+
+        for (let i = 0; i < files.length; i++) {
+            let file = files[i],
+            name = file.name,
+            tokens = name.split("."),
+            extension = tokens[tokens.length-1].toLowerCase(),
+            valid_extensions = [ 'bvh' ];
+            
+            if (valid_extensions.lastIndexOf(extension) < 0) {
+                alert("Invalid file extension. Extension was '" + extension + "'");
+                return;
+            }
+
+            LoaderUtils.loadTextFile( file, text => {
+                const data = this.loader.parse( text );
+                this.onLoadBVH(data) ;
+            });
+        }
     }
     
     onWindowResize() {
