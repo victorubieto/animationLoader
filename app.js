@@ -1,6 +1,7 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
 import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/controls/OrbitControls.js';
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
+import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/GLTFLoader.js';
 import { GUI } from 'https://cdn.skypack.dev/lil-gui';
 import { LoaderUtils } from "./utils.js";
 
@@ -10,6 +11,7 @@ class App {
         
         this.clock = new THREE.Clock();
         this.loader = new BVHLoader();
+        this.loader2 = new GLTFLoader();
 
         this.camera = null;
         this.controls = null;
@@ -44,6 +46,15 @@ class App {
         this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
         this.controls.update();
         
+        this.loader2.load( 'data/test1.glb', (glb) => {
+            let model = glb.scene;
+            model.position.x = -2;
+            let skeletonHelper = new THREE.SkeletonHelper(model);
+            this.mixer2 = new THREE.AnimationMixer( model );
+            this.scene.add( model );
+            this.scene.add( skeletonHelper );
+        });
+
         // Add skeletons in the scene
         this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
 
@@ -168,6 +179,7 @@ class App {
                                 let animationClip = this.createAnimationFromRotations('Test', quats);
                                 // Apply the clip to the mixer
                                 this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                                this.mixer2.clipAction(animationClip).setEffectiveWeight(1.0).play();
                         });
                     else
                         alert('The extension of the file does not match with the expected input');
@@ -340,6 +352,7 @@ class App {
 
         if ( this.mixer ) {
             this.mixer.update( delta );
+            if ( this.mixer2 ) this.mixer2.update( delta );
             if ( this.mixerPred ) this.mixerPred.update( delta );
 
             // Inverse projection to locate landmarks in the space
@@ -424,7 +437,21 @@ class App {
 
         let names = quaternions_data[quaternions_data.length - 1];
         if (typeof(names[0]) != "string")
-            names = ["mixamorigHips.quaternion","mixamorigSpine.quaternion","mixamorigSpine1.quaternion","mixamorigSpine2.quaternion","mixamorigNeck.quaternion","mixamorigHead.quaternion","mixamorigLeftShoulder.quaternion","mixamorigLeftArm.quaternion","mixamorigLeftForeArm.quaternion","mixamorigLeftHand.quaternion","mixamorigLeftHandThumb1.quaternion","mixamorigLeftHandThumb2.quaternion","mixamorigLeftHandThumb3.quaternion","mixamorigLeftHandIndex1.quaternion","mixamorigLeftHandIndex2.quaternion","mixamorigLeftHandIndex3.quaternion","mixamorigLeftHandMiddle1.quaternion","mixamorigLeftHandMiddle2.quaternion","mixamorigLeftHandMiddle3.quaternion","mixamorigLeftHandRing1.quaternion","mixamorigLeftHandRing2.quaternion","mixamorigLeftHandRing3.quaternion","mixamorigLeftHandPinky1.quaternion","mixamorigLeftHandPinky2.quaternion","mixamorigLeftHandPinky3.quaternion","mixamorigRightShoulder.quaternion","mixamorigRightArm.quaternion","mixamorigRightForeArm.quaternion","mixamorigRightHand.quaternion","mixamorigRightHandThumb1.quaternion","mixamorigRightHandThumb2.quaternion","mixamorigRightHandThumb3.quaternion","mixamorigRightHandIndex1.quaternion","mixamorigRightHandIndex2.quaternion","mixamorigRightHandIndex3.quaternion","mixamorigRightHandMiddle1.quaternion","mixamorigRightHandMiddle2.quaternion","mixamorigRightHandMiddle3.quaternion","mixamorigRightHandRing1.quaternion","mixamorigRightHandRing2.quaternion","mixamorigRightHandRing3.quaternion","mixamorigRightHandPinky1.quaternion","mixamorigRightHandPinky2.quaternion","mixamorigRightHandPinky3.quaternion","mixamorigLeftUpLeg.quaternion","mixamorigLeftLeg.quaternion","mixamorigLeftFoot.quaternion","mixamorigLeftToeBase.quaternion","mixamorigRightUpLeg.quaternion","mixamorigRightLeg.quaternion","mixamorigRightFoot.quaternion","mixamorigRightToeBase.quaternion"];
+            names = ["mixamorigHips.quaternion","mixamorigSpine.quaternion","mixamorigSpine1.quaternion","mixamorigSpine2.quaternion","mixamorigNeck.quaternion","mixamorigHead.quaternion","mixamorigHeadTop_End.quaternion",
+                "mixamorigLeftShoulder.quaternion","mixamorigLeftArm.quaternion","mixamorigLeftForeArm.quaternion","mixamorigLeftHand.quaternion",
+                "mixamorigLeftHandThumb1.quaternion","mixamorigLeftHandThumb2.quaternion","mixamorigLeftHandThumb3.quaternion","mixamorigLeftHandThumb4.quaternion",
+                "mixamorigLeftHandIndex1.quaternion","mixamorigLeftHandIndex2.quaternion","mixamorigLeftHandIndex3.quaternion","mixamorigLeftHandIndex4.quaternion",
+                "mixamorigLeftHandMiddle1.quaternion","mixamorigLeftHandMiddle2.quaternion","mixamorigLeftHandMiddle3.quaternion","mixamorigLeftHandMiddle4.quaternion",
+                "mixamorigLeftHandRing1.quaternion","mixamorigLeftHandRing2.quaternion","mixamorigLeftHandRing3.quaternion","mixamorigLeftHandRing4.quaternion",
+                "mixamorigLeftHandPinky1.quaternion","mixamorigLeftHandPinky2.quaternion","mixamorigLeftHandPinky3.quaternion","mixamorigLeftHandPinky4.quaternion",
+                "mixamorigRightShoulder.quaternion","mixamorigRightArm.quaternion","mixamorigRightForeArm.quaternion","mixamorigRightHand.quaternion",
+                "mixamorigRightHandThumb1.quaternion","mixamorigRightHandThumb2.quaternion","mixamorigRightHandThumb3.quaternion","mixamorigRightHandThumb4.quaternion",
+                "mixamorigRightHandIndex1.quaternion","mixamorigRightHandIndex2.quaternion","mixamorigRightHandIndex3.quaternion","mixamorigRightHandIndex4.quaternion",
+                "mixamorigRightHandMiddle1.quaternion","mixamorigRightHandMiddle2.quaternion","mixamorigRightHandMiddle3.quaternion","mixamorigRightHandMiddle4.quaternion",
+                "mixamorigRightHandRing1.quaternion","mixamorigRightHandRing2.quaternion","mixamorigRightHandRing3.quaternion","mixamorigRightHandRing4.quaternion",
+                "mixamorigRightHandPinky1.quaternion","mixamorigRightHandPinky2.quaternion","mixamorigRightHandPinky3.quaternion","mixamorigRightHandPinky4.quaternion",
+                "mixamorigLeftUpLeg.quaternion","mixamorigLeftLeg.quaternion","mixamorigLeftFoot.quaternion","mixamorigLeftToeBase.quaternion",
+                "mixamorigRightUpLeg.quaternion","mixamorigRightLeg.quaternion","mixamorigRightFoot.quaternion","mixamorigRightToeBase.quaternion"];
         let bones_length = quaternions_data[0].length;
     
         let tracks = [];
