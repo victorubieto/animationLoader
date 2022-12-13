@@ -5,6 +5,8 @@ import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loa
 import { GUI } from 'https://cdn.skypack.dev/lil-gui';
 import { LoaderUtils } from "./utils.js";
 
+import { AnimationRetargeting } from './retargeting.js'
+
 class App {
 
     constructor() {
@@ -20,6 +22,7 @@ class App {
 
         this.mixer = null;
         this.skeletonHelper = null;
+        this.retargeting = new AnimationRetargeting();
     }
 
     init() {
@@ -46,29 +49,23 @@ class App {
         this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
         this.controls.update();
         
-        this.loader2.load( 'data/test1.glb', (glb) => {
-            let model = glb.scene;
-            model.position.x = -2;
-            let skeletonHelper = new THREE.SkeletonHelper(model);
-            this.mixer2 = new THREE.AnimationMixer( model );
-            this.scene.add( model );
-            this.scene.add( skeletonHelper );
-        });
-
         // Add skeletons in the scene
-        this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
+        this.loader.load( 'data/skeletons/kateBVH.bvh', (result) => {
 
-            let skinnedMesh = result.skeleton;
+            let skinnedMesh = this.srcSkeletonGT = result.skeleton;
             this.skeletonHelper = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
             this.skeletonHelper.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
 
             // Correct mixamo skeleton rotation
             let obj = new THREE.Object3D();
             obj.add( this.skeletonHelper )
-            obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
-            
+            //obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
+            obj.position.x = -1;
+            obj.visible = true;
+            obj.scale.set(0.01, 0.01, 0.01);
+
             let boneContainer = new THREE.Group();
-            boneContainer.add( result.skeleton.bones[0] );
+            boneContainer.add( skinnedMesh.bones[0] );
             
             this.scene.add( obj );
             this.scene.add( boneContainer );
@@ -77,19 +74,21 @@ class App {
         } );
         
         // Repeat for the prediction skeleton
-        this.loader.load( 'data/skeletons/create_db_m.bvh', (result) => {
+        this.loader.load( 'data/skeletons/kateBVH.bvh', (result) => {
 
-            this.skeletonHelperPred = new THREE.SkeletonHelper( result.skeleton.bones[0] );
-            this.skeletonHelperPred.skeleton = result.skeleton; // allow animation mixer to bind to THREE.SkeletonHelper directly
+            let skinnedMesh = this.srcSkeletonPred = result.skeleton;
+            this.skeletonHelperPred = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
+            this.skeletonHelperPred.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
             
             let obj = new THREE.Object3D();
             obj.add( this.skeletonHelperPred )
-            obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
-            obj.position.x = 2;
-            obj.visible = false;
+            //obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
+            obj.position.x = 1;
+            obj.visible = true;
+            obj.scale.set(0.01, 0.01, 0.01);
             
             let boneContainer = new THREE.Group();
-            boneContainer.add( result.skeleton.bones[0] );
+            boneContainer.add( skinnedMesh.bones[0] );
             
             this.scene.add( obj );
             this.scene.add( boneContainer );
@@ -102,6 +101,27 @@ class App {
             this.mixerPred = new THREE.AnimationMixer( this.skeletonHelperPred );
         } );
         
+        // Load Eva GLB avatars (for the GT and the Prediction)
+        this.loader2.load( 'data/skeletons/Eva_Y.glb', (glb) => {
+            let model = glb.scene;
+            model.visible = false;
+            model.position.set(-3,0,0);
+            model.rotateOnAxis(new THREE.Vector3(1,0,0), -Math.PI/2);
+            this.mixerEva = new THREE.AnimationMixer(model);
+            this.scene.add( model );
+            this.modelGT = model;
+        });
+        this.loader2.load( 'data/skeletons/Eva_Y.glb', (glb) => {
+            let model = glb.scene;
+            model.visible = false;
+            model.position.set(3,0,0);
+            model.rotateOnAxis(new THREE.Vector3(1,0,0), -Math.PI/2);
+            this.mixerPredEva = new THREE.AnimationMixer(model);
+            this.scene.add( model );
+            this.modelPred = model;
+        });
+
+
         // Add auxiliary points to visualize the landmarks
         this.points = new THREE.Points( new THREE.BufferGeometry(), new THREE.PointsMaterial( { color: "#ff0000", size: 0.025 } ) );
         this.points.frustumCulled = false;
@@ -136,10 +156,22 @@ class App {
         let gui = new GUI();
 
         let options = {
-            seeMesh: true,
+            seeMesh: false,
             seeSkeleton: true,
             seeLandmarks: true,
             LMcolor: "#ff0000",
+
+            Anim: () => {
+                this.loader.load( 'data/anims/agreeing_enhanced_YZ.bvh', (result) => {
+                    let tracks = [];
+                    for (let i = 0; i < result.clip.tracks.length; i++) { // for each joint
+                        if (result.clip.tracks[i].name.includes('.quaternion'))
+                            tracks.push(result.clip.tracks[i]);
+                    }
+                    result.clip.tracks = tracks;
+                    this.mixer.clipAction(result.clip).setEffectiveWeight(1.0).play();
+                } );
+            },
 
             insertQuats: () => {
                 let input = document.createElement('input');
@@ -176,10 +208,12 @@ class App {
                         LoaderUtils.loadTextFile( file, data => {
                             let quats = JSON.parse(data);
                             // Create the clip from the quaternions
-                                let animationClip = this.createAnimationFromRotations('Test', quats);
-                                // Apply the clip to the mixer
-                                this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
-                                this.mixer2.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                            let animationClip = this.createAnimationFromRotations('Test', quats);
+                            // Apply the clip to the mixer
+                            this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
+                            this.retargeting.loadAnimation(this.srcSkeletonGT, animationClip);
+                            let retargetedClip = this.retargeting.createAnimation(this.modelGT);
+                            this.mixerEva.clipAction(retargetedClip).setEffectiveWeight(1.0).play();                            
                         });
                     else
                         alert('The extension of the file does not match with the expected input');
@@ -214,7 +248,9 @@ class App {
                             let animationClip = this.createAnimationFromRotations('Test', quats);
                             // Apply the clip to the mixer
                             this.mixerPred.clipAction(animationClip).setEffectiveWeight(1.0).play();
-                            this.scene.children[4].visible = true;
+                            this.retargeting.loadAnimation(this.srcSkeletonPred, animationClip);
+                            let retargetedClip = this.retargeting.createAnimation(this.modelPred);
+                            this.mixerPredEva.clipAction(retargetedClip).setEffectiveWeight(1.0).play();
                         });
                     else
                         alert('The extension of the file does not match with the expected input');
@@ -303,6 +339,7 @@ class App {
             }
         };
 
+        gui.add(options,'Anim').name('Animate BVH');
         gui.add(options,'insertQuats').name('Load Quaternions');
         gui.add(options,'rest').name('Rest Pose');
 
@@ -338,9 +375,10 @@ class App {
         folder.add(options,'seeSkeleton').name('Show Skeleton').listen().onChange( (value) => {
             this.scene.children[2].visible = value;
         } );
-        // folder.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
-        //     this.scene.children[1].visible = value;
-        // } );
+        folder.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
+            this.modelGT.visible = value;
+            this.modelPred.visible = value;
+        } );
 
     }
 
@@ -352,8 +390,9 @@ class App {
 
         if ( this.mixer ) {
             this.mixer.update( delta );
-            if ( this.mixer2 ) this.mixer2.update( delta );
+            if ( this.mixerEva ) this.mixerEva.update( delta );
             if ( this.mixerPred ) this.mixerPred.update( delta );
+            if ( this.mixerPredEva ) this.mixerPredEva.update( delta );
 
             // Inverse projection to locate landmarks in the space
             if ( this.lms && this.mixer._actions[0] ) {
@@ -436,6 +475,7 @@ class App {
     createAnimationFromRotations( name, quaternions_data ) {
 
         let names = quaternions_data[quaternions_data.length - 1];
+        //names = ["mixamorigHips.quaternion","mixamorigSpine.quaternion","mixamorigSpine1.quaternion","mixamorigSpine2.quaternion","mixamorigNeck.quaternion","mixamorigHead.quaternion","mixamorigLeftShoulder.quaternion","mixamorigLeftArm.quaternion","mixamorigLeftForeArm.quaternion","mixamorigLeftHand.quaternion","mixamorigLeftHandThumb1.quaternion","mixamorigLeftHandThumb2.quaternion","mixamorigLeftHandThumb3.quaternion","mixamorigLeftHandIndex1.quaternion","mixamorigLeftHandIndex2.quaternion","mixamorigLeftHandIndex3.quaternion","mixamorigLeftHandMiddle1.quaternion","mixamorigLeftHandMiddle2.quaternion","mixamorigLeftHandMiddle3.quaternion","mixamorigLeftHandRing1.quaternion","mixamorigLeftHandRing2.quaternion","mixamorigLeftHandRing3.quaternion","mixamorigLeftHandPinky1.quaternion","mixamorigLeftHandPinky2.quaternion","mixamorigLeftHandPinky3.quaternion","mixamorigRightShoulder.quaternion","mixamorigRightArm.quaternion","mixamorigRightForeArm.quaternion","mixamorigRightHand.quaternion","mixamorigRightHandThumb1.quaternion","mixamorigRightHandThumb2.quaternion","mixamorigRightHandThumb3.quaternion","mixamorigRightHandIndex1.quaternion","mixamorigRightHandIndex2.quaternion","mixamorigRightHandIndex3.quaternion","mixamorigRightHandMiddle1.quaternion","mixamorigRightHandMiddle2.quaternion","mixamorigRightHandMiddle3.quaternion","mixamorigRightHandRing1.quaternion","mixamorigRightHandRing2.quaternion","mixamorigRightHandRing3.quaternion","mixamorigRightHandPinky1.quaternion","mixamorigRightHandPinky2.quaternion","mixamorigRightHandPinky3.quaternion","mixamorigLeftUpLeg.quaternion","mixamorigLeftLeg.quaternion","mixamorigLeftFoot.quaternion","mixamorigLeftToeBase.quaternion","mixamorigRightUpLeg.quaternion","mixamorigRightLeg.quaternion","mixamorigRightFoot.quaternion","mixamorigRightToeBase.quaternion"];
         if (typeof(names[0]) != "string")
             names = ["mixamorigHips.quaternion","mixamorigSpine.quaternion","mixamorigSpine1.quaternion","mixamorigSpine2.quaternion","mixamorigNeck.quaternion","mixamorigHead.quaternion","mixamorigHeadTop_End.quaternion",
                 "mixamorigLeftShoulder.quaternion","mixamorigLeftArm.quaternion","mixamorigLeftForeArm.quaternion","mixamorigLeftHand.quaternion",
