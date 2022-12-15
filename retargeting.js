@@ -509,14 +509,14 @@ class AnimationRetargeting {
         this.srcBindPose = this.getBindPose(srcpose, true);
 
         // set model in bind pose
-        for(let i = 0; i < this.srcBindPose.length; i++) {
+        /*for(let i = 0; i < this.srcBindPose.length; i++) {
             let bone = this.srcBindPose[i];
             let o = srcpose.getBoneByName(bone.name);
             o.position.copy(bone.position);
-            bone.scale.copy(o.scale);
+            o.scale.copy(bone.scale);
             o.quaternion.copy(bone.quaternion);
             o.updateWorldMatrix();
-        }
+        }*/
 
         this.srcSkeletonHelper = new THREE.SkeletonHelper( srcpose.bones[0] );
         this.srcSkeletonHelper.skeleton = srcpose;

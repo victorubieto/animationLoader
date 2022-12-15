@@ -29,12 +29,16 @@ class App {
 
         // Init scene, renderer and add to body element
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color( 0xeeeeee );
+        this.scene.background = new THREE.Color( 0xcccccc );
         this.scene.add( new THREE.GridHelper(10, 10) );
         
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
         this.renderer.setPixelRatio( window.devicePixelRatio );
         this.renderer.setSize( window.innerWidth, window.innerHeight );
+        this.renderer.outputEncoding = THREE.sRGBEncoding;
+        this.renderer.gammaInput = true; // applies degamma to textures ( not applied to material.color and roughness, metalnes, etc. Only to colour textures )
+        this.renderer.gammaOutput = true; // applies gamma after all lighting operations ( which are done in linear space )
+
         
         const canvas = this.renderer.domElement;
         document.body.appendChild( canvas );
@@ -49,9 +53,18 @@ class App {
         this.controls.target = new THREE.Vector3( 0, 0.5, 0 );
         this.controls.update();
         
+        // Set up lights
+        let hemiLight = new THREE.HemisphereLight( 0xffffff, 0x555555, 0.2 );
+        hemiLight.position.set( 0, 20, 0 );
+        this.scene.add( hemiLight );
+
+        let dirLight = new THREE.DirectionalLight( 0xffffff, 0.7 );
+        dirLight.position.set( 0, 3, 4 );
+        dirLight.castShadow = false;
+        this.scene.add(dirLight);
+
         // Add skeletons in the scene
         this.loader.load( 'data/skeletons/kateBVH.bvh', (result) => {
-
             let skinnedMesh = this.srcSkeletonGT = result.skeleton;
             this.skeletonHelper = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
             this.skeletonHelper.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
@@ -92,12 +105,7 @@ class App {
             
             this.scene.add( obj );
             this.scene.add( boneContainer );
-            
-            // Change the color of the prediction skeleton
-            //this.scene.children[2].children[0].material.color.r = 1;
-            //this.scene.children[2].children[0].material.color.g = 0;
-            //this.scene.children[2].children[0].material.color.b = 0;
-            
+                        
             this.mixerPred = new THREE.AnimationMixer( this.skeletonHelperPred );
         } );
         
@@ -197,6 +205,10 @@ class App {
                     this.mixer.stopAllAction();
                 if (this.mixerPred)
                     this.mixerPred.stopAllAction();
+                if (this.mixerEva)
+                    this.mixerEva.stopAllAction();
+                if (this.mixerPredEva)
+                    this.mixerPredEva.stopAllAction();
             },
             
             loadGT: () => {
@@ -210,6 +222,9 @@ class App {
                             // Create the clip from the quaternions
                             let animationClip = this.createAnimationFromRotations('Test', quats);
                             // Apply the clip to the mixer
+                            if ( this.mixer ) this.mixer.stopAllAction(); // does not deallocate memory!!
+                            if ( this.mixerEva ) this.mixerEva.stopAllAction();
+
                             this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
                             this.retargeting.loadAnimation(this.srcSkeletonGT, animationClip);
                             let retargetedClip = this.retargeting.createAnimation(this.modelGT);
@@ -246,6 +261,9 @@ class App {
                             let quats = JSON.parse(data);
                             // Create the clip from the quaternions
                             let animationClip = this.createAnimationFromRotations('Test', quats);
+
+                            if (this.mixerPred ) this.mixerPred.stopAllAction(); // does not deallocate memory!!
+                            if (this.mixerPredEva ) this.mixerPredEva.stopAllAction();
                             // Apply the clip to the mixer
                             this.mixerPred.clipAction(animationClip).setEffectiveWeight(1.0).play();
                             this.retargeting.loadAnimation(this.srcSkeletonPred, animationClip);
@@ -273,6 +291,10 @@ class App {
                     this.mixer.setTime(0);
                 if (this.mixerPred)
                     this.mixerPred.setTime(0);
+                if (this.mixerEva)
+                    this.mixerEva.setTime(0);
+                if (this.mixerPredEva)
+                    this.mixerPredEva.setTime(0);
             },
 
             evaluate: () => {
@@ -373,11 +395,12 @@ class App {
             this.scene.children[1].visible = value;
         } );
         folder.add(options,'seeSkeleton').name('Show Skeleton').listen().onChange( (value) => {
-            this.scene.children[2].visible = value;
+            this.skeletonHelperPred.visible = value;
+            this.skeletonHelper.visible = value;
         } );
         folder.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
-            this.modelGT.visible = value;
-            this.modelPred.visible = value;
+            if ( this.modelGT ) this.modelGT.visible = value;
+            if ( this.modelPred ) this.modelPred.visible = value;
         } );
 
     }
