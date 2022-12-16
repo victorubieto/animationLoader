@@ -29,7 +29,7 @@ class App {
 
         // Init scene, renderer and add to body element
         this.scene = new THREE.Scene();
-        this.scene.background = new THREE.Color( 0xcccccc );
+        this.scene.background = new THREE.Color( 0xeeeeee );
         this.scene.add( new THREE.GridHelper(10, 10) );
         
         this.renderer = new THREE.WebGLRenderer( { antialias: true } );
@@ -63,7 +63,8 @@ class App {
         dirLight.castShadow = false;
         this.scene.add(dirLight);
 
-        // Add skeletons in the scene
+        // Add skeletons in the scene (m)
+        this.distanceBetween = 1;
         this.loader.load( 'data/skeletons/kateBVH.bvh', (result) => {
             let skinnedMesh = this.srcSkeletonGT = result.skeleton;
             this.skeletonHelper = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
@@ -72,8 +73,7 @@ class App {
             // Correct mixamo skeleton rotation
             let obj = new THREE.Object3D();
             obj.add( this.skeletonHelper )
-            //obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
-            obj.position.x = -1;
+            obj.position.x = -this.distanceBetween/2;
             obj.visible = true;
             obj.scale.set(0.01, 0.01, 0.01);
 
@@ -95,8 +95,7 @@ class App {
             
             let obj = new THREE.Object3D();
             obj.add( this.skeletonHelperPred )
-            //obj.rotateOnAxis( new THREE.Vector3(1,0,0), Math.PI/2 );
-            obj.position.x = 1;
+            obj.position.x = this.distanceBetween/2;
             obj.visible = true;
             obj.scale.set(0.01, 0.01, 0.01);
             
@@ -111,22 +110,20 @@ class App {
         
         // Load Eva GLB avatars (for the GT and the Prediction)
         this.loader2.load( 'data/skeletons/Eva_Y.glb', (glb) => {
-            let model = glb.scene;
-            model.visible = false;
-            model.position.set(-3,0,0);
+            let model = this.modelGT = glb.scene;
+            model.visible = true;
+            model.position.set(-this.distanceBetween-this.distanceBetween/2,0,0);
             model.rotateOnAxis(new THREE.Vector3(1,0,0), -Math.PI/2);
             this.mixerEva = new THREE.AnimationMixer(model);
             this.scene.add( model );
-            this.modelGT = model;
         });
         this.loader2.load( 'data/skeletons/Eva_Y.glb', (glb) => {
-            let model = glb.scene;
-            model.visible = false;
-            model.position.set(3,0,0);
+            let model = this.modelPred = glb.scene;
+            model.visible = true;
+            model.position.set(this.distanceBetween+this.distanceBetween/2,0,0);
             model.rotateOnAxis(new THREE.Vector3(1,0,0), -Math.PI/2);
             this.mixerPredEva = new THREE.AnimationMixer(model);
             this.scene.add( model );
-            this.modelPred = model;
         });
 
 
@@ -159,54 +156,21 @@ class App {
 
     initGUI() {
 
-        //let that = this;
-
-        let gui = new GUI();
+        let gui = new GUI().title('Evaluate Dataset Options');
 
         let options = {
-            seeMesh: false,
+            seeMesh: true,
             seeSkeleton: true,
             seeLandmarks: true,
             LMcolor: "#ff0000",
 
-            Anim: () => {
-                this.loader.load( 'data/anims/agreeing_enhanced_YZ.bvh', (result) => {
-                    let tracks = [];
-                    for (let i = 0; i < result.clip.tracks.length; i++) { // for each joint
-                        if (result.clip.tracks[i].name.includes('.quaternion'))
-                            tracks.push(result.clip.tracks[i]);
-                    }
-                    result.clip.tracks = tracks;
-                    this.mixer.clipAction(result.clip).setEffectiveWeight(1.0).play();
-                } );
-            },
-
-            insertQuats: () => {
-                let input = document.createElement('input');
-                input.type = 'file';
-                input.onchange = (e) => {
-                    let file = e.target.files[0];
-                    if (file.name.includes('.json'))
-                        LoaderUtils.loadTextFile( file, data => {
-                            let quats = JSON.parse(data);
-                            // Create the clip from the quaternions
-                            let animationClip = this.createAnimationFromRotations('Test', quats);
-                            // Apply the clip to the mixer
-                            this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
-                        });
-                    else
-                        alert('The extension of the file does not match with the expected input');
-                }
-                input.click();
-            },
-
             rest: () => {
                 if (this.mixer)
                     this.mixer.stopAllAction();
-                if (this.mixerPred)
-                    this.mixerPred.stopAllAction();
                 if (this.mixerEva)
                     this.mixerEva.stopAllAction();
+                if (this.mixerPred)
+                    this.mixerPred.stopAllAction();
                 if (this.mixerPredEva)
                     this.mixerPredEva.stopAllAction();
             },
@@ -344,7 +308,7 @@ class App {
                     
                     time_dist.every( (el, idx) => dist_list[idx].push(el) );
                 }
-            
+                
                 // Download data
                 function download(content, fileName, contentType) {
                     let a = document.createElement("a");
@@ -361,22 +325,13 @@ class App {
             }
         };
 
-        gui.add(options,'Anim').name('Animate BVH');
-        gui.add(options,'insertQuats').name('Load Quaternions');
-        gui.add(options,'rest').name('Rest Pose');
-
-        let folder = gui.addFolder('Evaluate Dataset');
+        // Structurate folders
+        let gtfolder = gui.addFolder('Ground Truth Animation (left)');
         
-        folder.add(options,'resetCamera').name('Reset Camera');
-        folder.add(options,'resetAnimation').name('Reset Animation');
-
-        folder.add(options,'loadGT').name('Load Ground Truth');
-        folder.add(options,'loadLMs').name('Load Landmarks');
-        folder.add(options,'loadPred').name('Load Prediction');
-        
-        folder.add(options,'evaluate').name('Evaluate Prediction');
-
-        folder.addColor(options,'LMcolor').name('Landmarks Color').listen().onChange( (value) => {
+        gtfolder.add(options,'rest').name('Set to Rest Pose');
+        gtfolder.add(options,'loadGT').name('Load Ground Truth');
+        gtfolder.add(options,'loadLMs').name('Load Landmarks');
+        gtfolder.addColor(options,'LMcolor').name('Landmarks Color').listen().onChange( (value) => {
 
             function hexToRgb(hex) {
                 let result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
@@ -391,18 +346,27 @@ class App {
                 var rgb = hexToRgb(value);
                 this.scene.children[1].material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
         } );
-        folder.add(options,'seeLandmarks').name('Show Landmarks').listen().onChange( (value) => {
+        
+        let predfolder = gui.addFolder('Estimated Aniamtion (right)');
+
+        predfolder.add(options,'rest').name('Set to Rest Pose');
+        predfolder.add(options,'loadPred').name('Load Prediction');
+        
+        gui.add(options,'resetCamera').name('Reset Camera');
+        gui.add(options,'resetAnimation').name('Reset Animations');
+        gui.add(options,'evaluate').name('Evaluate Prediction');
+
+        gui.add(options,'seeLandmarks').name('Show Landmarks').listen().onChange( (value) => {
             this.scene.children[1].visible = value;
         } );
-        folder.add(options,'seeSkeleton').name('Show Skeleton').listen().onChange( (value) => {
+        gui.add(options,'seeSkeleton').name('Show Skeleton').listen().onChange( (value) => {
             this.skeletonHelperPred.visible = value;
             this.skeletonHelper.visible = value;
         } );
-        folder.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
+        gui.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
             if ( this.modelGT ) this.modelGT.visible = value;
             if ( this.modelPred ) this.modelPred.visible = value;
         } );
-
     }
 
     animate() {
@@ -498,7 +462,6 @@ class App {
     createAnimationFromRotations( name, quaternions_data ) {
 
         let names = quaternions_data[quaternions_data.length - 1];
-        //names = ["mixamorigHips.quaternion","mixamorigSpine.quaternion","mixamorigSpine1.quaternion","mixamorigSpine2.quaternion","mixamorigNeck.quaternion","mixamorigHead.quaternion","mixamorigLeftShoulder.quaternion","mixamorigLeftArm.quaternion","mixamorigLeftForeArm.quaternion","mixamorigLeftHand.quaternion","mixamorigLeftHandThumb1.quaternion","mixamorigLeftHandThumb2.quaternion","mixamorigLeftHandThumb3.quaternion","mixamorigLeftHandIndex1.quaternion","mixamorigLeftHandIndex2.quaternion","mixamorigLeftHandIndex3.quaternion","mixamorigLeftHandMiddle1.quaternion","mixamorigLeftHandMiddle2.quaternion","mixamorigLeftHandMiddle3.quaternion","mixamorigLeftHandRing1.quaternion","mixamorigLeftHandRing2.quaternion","mixamorigLeftHandRing3.quaternion","mixamorigLeftHandPinky1.quaternion","mixamorigLeftHandPinky2.quaternion","mixamorigLeftHandPinky3.quaternion","mixamorigRightShoulder.quaternion","mixamorigRightArm.quaternion","mixamorigRightForeArm.quaternion","mixamorigRightHand.quaternion","mixamorigRightHandThumb1.quaternion","mixamorigRightHandThumb2.quaternion","mixamorigRightHandThumb3.quaternion","mixamorigRightHandIndex1.quaternion","mixamorigRightHandIndex2.quaternion","mixamorigRightHandIndex3.quaternion","mixamorigRightHandMiddle1.quaternion","mixamorigRightHandMiddle2.quaternion","mixamorigRightHandMiddle3.quaternion","mixamorigRightHandRing1.quaternion","mixamorigRightHandRing2.quaternion","mixamorigRightHandRing3.quaternion","mixamorigRightHandPinky1.quaternion","mixamorigRightHandPinky2.quaternion","mixamorigRightHandPinky3.quaternion","mixamorigLeftUpLeg.quaternion","mixamorigLeftLeg.quaternion","mixamorigLeftFoot.quaternion","mixamorigLeftToeBase.quaternion","mixamorigRightUpLeg.quaternion","mixamorigRightLeg.quaternion","mixamorigRightFoot.quaternion","mixamorigRightToeBase.quaternion"];
         if (typeof(names[0]) != "string")
             names = ["mixamorigHips.quaternion","mixamorigSpine.quaternion","mixamorigSpine1.quaternion","mixamorigSpine2.quaternion","mixamorigNeck.quaternion","mixamorigHead.quaternion","mixamorigHeadTop_End.quaternion",
                 "mixamorigLeftShoulder.quaternion","mixamorigLeftArm.quaternion","mixamorigLeftForeArm.quaternion","mixamorigLeftHand.quaternion",
