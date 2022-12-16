@@ -130,14 +130,15 @@ class App {
         // Add auxiliary points to visualize the landmarks
         this.points = new THREE.Points( new THREE.BufferGeometry(), new THREE.PointsMaterial( { color: "#ff0000", size: 0.025 } ) );
         this.points.frustumCulled = false;
+        this.points.name = "Landmarks";
         this.scene.add( this.points );
         
         // Get camera matrices
         // Blender (fov 55) works with horizontal and threejs with vertical fov => 55 / (1280/720) = 30.9375
         let blenderCamera = new THREE.PerspectiveCamera( 30.9375, 1280/720, 0.1, 1000 );
-        blenderCamera.position.set( 0.05, 1.8, 3.1 );
+        blenderCamera.position.set( 0.05 - this.distanceBetween/2, 1.8, 3.1 );
         blenderCamera.updateMatrixWorld()
-        blenderCamera.lookAt(0.05, 1.28381, 0.172517);
+        blenderCamera.lookAt(0.05 - this.distanceBetween/2, 1.28381, 0.172517);
         blenderCamera.updateMatrixWorld()
         this.inv_view_matrix = blenderCamera.matrixWorld; // camera view inverted
         blenderCamera.updateProjectionMatrix();
@@ -159,16 +160,21 @@ class App {
         let gui = new GUI().title('Evaluate Dataset Options');
 
         let options = {
-            seeMesh: true,
-            seeSkeleton: true,
+            seeMeshGT: true,
+            seeMeshPred: true,
+            seeSkeletonGT: true,
+            seeSkeletonPred: true,
             seeLandmarks: true,
             LMcolor: "#ff0000",
 
-            rest: () => {
+            restGT: () => {
                 if (this.mixer)
                     this.mixer.stopAllAction();
                 if (this.mixerEva)
                     this.mixerEva.stopAllAction();
+            },
+
+            restPred: () => {
                 if (this.mixerPred)
                     this.mixerPred.stopAllAction();
                 if (this.mixerPredEva)
@@ -244,9 +250,9 @@ class App {
             resetCamera: () => {
                 this.camera.fov = 30.9375;
                 this.camera.aspect = 1280/720
-                this.camera.position.set( 0.05, 1.8, 3.1 );
+                this.camera.position.set( 0.05 - this.distanceBetween/2, 1.8, 3.1 );
                 this.camera.updateProjectionMatrix();
-                this.controls.target = new THREE.Vector3( 0.05, 1.28381, 0.172517 );
+                this.controls.target = new THREE.Vector3( 0.05 - this.distanceBetween/2, 1.28381, 0.172517 );
                 this.controls.update();
             },
 
@@ -295,11 +301,11 @@ class App {
                         time_pos[1][0].push(posPred.x * 100);
                         time_pos[1][1].push(posPred.y * 100);
                         time_pos[1][2].push(posPred.z * 100);
-
+                        
                         // Save its distance in cm
                         time_dist.push( posGT.distanceTo(posPred) * 100 );
                     }
-
+                    
                     time_pos.every( (gt_pred, type_idx) =>
                         gt_pred.every( (axis_el, axis_idx) =>
                             axis_el.every( (el, idx) => pos_list[idx][type_idx][axis_idx].push(el) )
@@ -326,11 +332,16 @@ class App {
         };
 
         // Structurate folders
+        gui.add(options,'resetCamera').name('Reset Camera');
+        gui.add(options,'resetAnimation').name('Reset Animations');
+        gui.add(options,'evaluate').name('Evaluate Prediction');
+
         let gtfolder = gui.addFolder('Ground Truth Animation (left)');
         
-        gtfolder.add(options,'rest').name('Set to Rest Pose');
+        gtfolder.add(options,'restGT').name('Set to Rest Pose');
         gtfolder.add(options,'loadGT').name('Load Ground Truth');
         gtfolder.add(options,'loadLMs').name('Load Landmarks');
+        
         gtfolder.addColor(options,'LMcolor').name('Landmarks Color').listen().onChange( (value) => {
 
             function hexToRgb(hex) {
@@ -342,29 +353,29 @@ class App {
                 } : null;
             }
             
-            if (this.scene.children[1].material)
+            if (this.scene.getChildByName("Landmarks").material)
                 var rgb = hexToRgb(value);
-                this.scene.children[1].material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
+                this.scene.getChildByName("Landmarks").material.color = new THREE.Color(rgb.r/255, rgb.g/255, rgb.b/255);
+        } );
+        gtfolder.add(options,'seeLandmarks').name('Show Landmarks').listen().onChange( (value) => {
+            this.scene.getChildByName("Landmarks").visible = value;
+        } );
+        gtfolder.add(options,'seeSkeletonGT').name('Show Skeleton').listen().onChange( (value) => {
+            this.skeletonHelper.visible = value;
+        } );
+        gtfolder.add(options,'seeMeshGT').name('Show Avatar').listen().onChange( (value) => {
+            if ( this.modelGT ) this.modelGT.visible = value;
         } );
         
         let predfolder = gui.addFolder('Estimated Aniamtion (right)');
 
-        predfolder.add(options,'rest').name('Set to Rest Pose');
+        predfolder.add(options,'restPred').name('Set to Rest Pose');
         predfolder.add(options,'loadPred').name('Load Prediction');
         
-        gui.add(options,'resetCamera').name('Reset Camera');
-        gui.add(options,'resetAnimation').name('Reset Animations');
-        gui.add(options,'evaluate').name('Evaluate Prediction');
-
-        gui.add(options,'seeLandmarks').name('Show Landmarks').listen().onChange( (value) => {
-            this.scene.children[1].visible = value;
-        } );
-        gui.add(options,'seeSkeleton').name('Show Skeleton').listen().onChange( (value) => {
+        predfolder.add(options,'seeSkeletonPred').name('Show Skeleton').listen().onChange( (value) => {
             this.skeletonHelperPred.visible = value;
-            this.skeletonHelper.visible = value;
         } );
-        gui.add(options,'seeMesh').name('Show Avatar').listen().onChange( (value) => {
-            if ( this.modelGT ) this.modelGT.visible = value;
+        predfolder.add(options,'seeMeshPred').name('Show Avatar').listen().onChange( (value) => {
             if ( this.modelPred ) this.modelPred.visible = value;
         } );
     }
@@ -399,7 +410,7 @@ class App {
                         y = -y * 2 + 1;
 
                         // z scales exponentially, just chosed a nice value
-                        let v = new THREE.Vector4(x, y, 0.93, 1);
+                        let v = new THREE.Vector4(x, y, 0.935, 1);
 
                         let v_view_space = v.clone(); 
                         v_view_space.applyMatrix4(this.inv_projection_matrix);
@@ -481,27 +492,28 @@ class App {
         let bones_length = quaternions_data[0].length;
     
         let tracks = [];
-        let quat_values = [];
+        let quatValues = [];
         let times = [];
         let time_accum = 0.0;
     
-        let quaternion_idx = 0;
+        let quatIdx = 0;
         let amount = 4;
         let isPosition = false;
     
-        while (quaternion_idx < bones_length) {
-            quat_values = [];
+        while (quatIdx < bones_length) {
+            quatValues = [];
             times = [];
             time_accum = 0.0;
-            isPosition = names[Math.ceil(quaternion_idx/amount)].includes("position");
+            let nameBone = names[Math.ceil(quatIdx/amount)]; 
+            isPosition = nameBone.includes("position");
     
             // loop for all frames
-            for (let frame_idx = 0; frame_idx < quaternions_data.length; ++frame_idx) {
-                quat_values.push(quaternions_data[frame_idx][quaternion_idx + 0]);
-                quat_values.push(quaternions_data[frame_idx][quaternion_idx + 1]);
-                quat_values.push(quaternions_data[frame_idx][quaternion_idx + 2]);
+            for (let frameIdx = 0; frameIdx < quaternions_data.length; ++frameIdx) {
+                quatValues.push(quaternions_data[frameIdx][quatIdx + 0]);
+                quatValues.push(quaternions_data[frameIdx][quatIdx + 1]);
+                quatValues.push(quaternions_data[frameIdx][quatIdx + 2]);
                 if (!isPosition)
-                    quat_values.push(quaternions_data[frame_idx][quaternion_idx + 3]);
+                    quatValues.push(quaternions_data[frameIdx][quatIdx + 3]);
     
                 time_accum += 0.032; //landmarks[i].dt / 1000.0;
                 times.push(time_accum);
@@ -509,16 +521,18 @@ class App {
     
             let data = null;
             if (isPosition) {
-                data = new THREE.VectorKeyframeTrack(names[Math.ceil(quaternion_idx / amount)], times, quat_values);
+                data = new THREE.VectorKeyframeTrack(nameBone, times, quatValues);
                 amount = 3;
-                quaternion_idx += amount;
+                quatIdx += amount;
             }
             else {
-                data = new THREE.QuaternionKeyframeTrack( names[Math.ceil(quaternion_idx / amount)], times, quat_values);
+                data = new THREE.QuaternionKeyframeTrack(nameBone, times, quatValues);
                 amount = 4;
-                quaternion_idx += amount;
+                quatIdx += amount;
             }
+
             tracks.push(data);
+            //if (!nameBone.includes("mixamorigHips.quaternion")) tracks.push(data); // set the hip static
         }
     
         // use -1 to automatically calculate the length from the array of tracks
