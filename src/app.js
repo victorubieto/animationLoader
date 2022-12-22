@@ -3,8 +3,6 @@ import { OrbitControls } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/
 import { BVHLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/BVHLoader.js';
 import { GLTFLoader } from 'https://cdn.skypack.dev/three@0.136/examples/jsm/loaders/GLTFLoader.js';
 import { GUI } from 'https://cdn.skypack.dev/lil-gui';
-import { LoaderUtils } from "./utils.js";
-
 import { AnimationRetargeting } from './retargeting.js'
 
 class App {
@@ -12,17 +10,38 @@ class App {
     constructor() {
         
         this.clock = new THREE.Clock();
-        this.loader = new BVHLoader();
-        this.loader2 = new GLTFLoader();
+        this.loaderBVH = new BVHLoader();
+        this.loaderGLB = new GLTFLoader();
+        this.retargeting = new AnimationRetargeting();
 
-        this.camera = null;
-        this.controls = null;
+        // main render attributes
         this.scene = null;
         this.renderer = null;
+        this.camera = null;
+        this.controls = null;
 
+        // ground truth skeleton attributes
         this.mixer = null;
         this.skeletonHelper = null;
-        this.retargeting = new AnimationRetargeting();
+        this.mixerEva = null;
+        this.modelGT = null;
+
+        // prediction skeleton attributes
+        this.mixerPred = null;
+        this.skeletonHelperPred = null;
+        this.mixerEvaPred = null;
+        this.modelPred = null;
+
+        // landmarks help attributes
+        this.lms = null;
+        this.points = null;
+        this.prev_iter = null;
+        this.inv_view_matrix = null;
+        this.inv_projection_matrix = null;
+        
+        // app modifiers and helpers
+        this.distanceBetween = 1; // distance in m between skeletons
+        this.scaleFactor = 0.01; // conversion from centimeters to meters (blender glb is in cm, but our application works in m)
     }
 
     init() {
@@ -64,9 +83,8 @@ class App {
         this.scene.add(dirLight);
 
         // Add skeletons in the scene (m)
-        this.distanceBetween = 1;
-        this.loader.load( 'data/skeletons/kateBVH.bvh', (result) => {
-            let skinnedMesh = this.srcSkeletonGT = result.skeleton;
+        this.loaderBVH.load( 'data/skeletons/kateBVH.bvh', (result) => {
+            let skinnedMesh = result.skeleton;
             this.skeletonHelper = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
             this.skeletonHelper.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
 
@@ -75,7 +93,7 @@ class App {
             obj.add( this.skeletonHelper )
             obj.position.x = -this.distanceBetween/2;
             obj.visible = true;
-            obj.scale.set(0.01, 0.01, 0.01);
+            obj.scale.set(this.scaleFactor, this.scaleFactor, this.scaleFactor);
 
             let boneContainer = new THREE.Group();
             boneContainer.add( skinnedMesh.bones[0] );
@@ -87,9 +105,9 @@ class App {
         } );
         
         // Repeat for the prediction skeleton
-        this.loader.load( 'data/skeletons/kateBVH.bvh', (result) => {
+        this.loaderBVH.load( 'data/skeletons/kateBVH.bvh', (result) => {
 
-            let skinnedMesh = this.srcSkeletonPred = result.skeleton;
+            let skinnedMesh = result.skeleton;
             this.skeletonHelperPred = new THREE.SkeletonHelper( skinnedMesh.bones[0] );
             this.skeletonHelperPred.skeleton = skinnedMesh; // allow animation mixer to bind to THREE.SkeletonHelper directly
             
@@ -97,7 +115,7 @@ class App {
             obj.add( this.skeletonHelperPred )
             obj.position.x = this.distanceBetween/2;
             obj.visible = true;
-            obj.scale.set(0.01, 0.01, 0.01);
+            obj.scale.set(this.scaleFactor, this.scaleFactor, this.scaleFactor);
             
             let boneContainer = new THREE.Group();
             boneContainer.add( skinnedMesh.bones[0] );
@@ -109,7 +127,7 @@ class App {
         } );
         
         // Load Eva GLB avatars (for the GT and the Prediction)
-        this.loader2.load( 'data/skeletons/Eva_Y.glb', (glb) => {
+        this.loaderGLB.load( 'data/skeletons/Eva_Y.glb', (glb) => {
             let model = this.modelGT = glb.scene;
             model.visible = true;
             model.position.set(-this.distanceBetween-this.distanceBetween/2,0,0);
@@ -117,7 +135,7 @@ class App {
             this.mixerEva = new THREE.AnimationMixer(model);
             this.scene.add( model );
         });
-        this.loader2.load( 'data/skeletons/Eva_Y.glb', (glb) => {
+        this.loaderGLB.load( 'data/skeletons/Eva_Y.glb', (glb) => {
             let model = this.modelPred = glb.scene;
             model.visible = true;
             model.position.set(this.distanceBetween+this.distanceBetween/2,0,0);
@@ -187,16 +205,16 @@ class App {
                 input_quats.onchange = (e) => {
                     let file = e.target.files[0];
                     if (file.name.includes('.json'))
-                        LoaderUtils.loadTextFile( file, data => {
+                        this.loadTextFile( file, data => {
                             let quats = JSON.parse(data);
                             // Create the clip from the quaternions
                             let animationClip = this.createAnimationFromRotations('Test', quats);
-                            // Apply the clip to the mixer
-                            if ( this.mixer ) this.mixer.stopAllAction(); // does not deallocate memory!!
-                            if ( this.mixerEva ) this.mixerEva.stopAllAction();
 
+                            if (this.mixer) this.mixer.stopAllAction(); // does not deallocate memory!!
+                            if (this.mixerEva) this.mixerEva.stopAllAction();
+                            // Apply the clip to the mixer
                             this.mixer.clipAction(animationClip).setEffectiveWeight(1.0).play();
-                            this.retargeting.loadAnimation(this.srcSkeletonGT, animationClip);
+                            this.retargeting.loadAnimation(this.skeletonHelper.skeleton, animationClip);
                             let retargetedClip = this.retargeting.createAnimation(this.modelGT);
                             this.mixerEva.clipAction(retargetedClip).setEffectiveWeight(1.0).play();                            
                         });
@@ -212,7 +230,7 @@ class App {
                 input_lms.onchange = (e) => {
                     let file = e.target.files[0];
                     if (file.name.includes('.json'))
-                        LoaderUtils.loadTextFile( file, data => {
+                        this.loadTextFile( file, data => {
                             this.lms = JSON.parse(data);
                         });
                     else
@@ -227,16 +245,16 @@ class App {
                 input_pred.onchange = (e) => {
                     let file = e.target.files[0];
                     if (file.name.includes('.json'))
-                        LoaderUtils.loadTextFile( file, data => {
+                        this.loadTextFile( file, data => {
                             let quats = JSON.parse(data);
                             // Create the clip from the quaternions
                             let animationClip = this.createAnimationFromRotations('Test', quats);
 
-                            if (this.mixerPred ) this.mixerPred.stopAllAction(); // does not deallocate memory!!
-                            if (this.mixerPredEva ) this.mixerPredEva.stopAllAction();
+                            if (this.mixerPred) this.mixerPred.stopAllAction(); // does not deallocate memory!!
+                            if (this.mixerPredEva) this.mixerPredEva.stopAllAction();
                             // Apply the clip to the mixer
                             this.mixerPred.clipAction(animationClip).setEffectiveWeight(1.0).play();
-                            this.retargeting.loadAnimation(this.srcSkeletonPred, animationClip);
+                            this.retargeting.loadAnimation(this.skeletonHelperPred.skeleton, animationClip);
                             let retargetedClip = this.retargeting.createAnimation(this.modelPred);
                             this.mixerPredEva.clipAction(retargetedClip).setEffectiveWeight(1.0).play();
                         });
@@ -294,16 +312,16 @@ class App {
                         this.mixer._root.bones[bone].getWorldPosition( posGT );
                         this.mixerPred._root.bones[bone].getWorldPosition( posPred );
                         
-                        // Save the positions in cm
-                        time_pos[0][0].push(posGT.x * 100);
-                        time_pos[0][1].push(posGT.y * 100);
-                        time_pos[0][2].push(posGT.z * 100);
-                        time_pos[1][0].push(posPred.x * 100);
-                        time_pos[1][1].push(posPred.y * 100);
-                        time_pos[1][2].push(posPred.z * 100);
+                        // Save the positions in cm (m * 100 = cm)
+                        time_pos[0][0].push(posGT.x * 100 * this.scaleFactor); // multiply by the scaleFactor to apply the scale correction in case the input skeleton is in cm and not in m
+                        time_pos[0][1].push(posGT.y * 100 * this.scaleFactor);
+                        time_pos[0][2].push(posGT.z * 100 * this.scaleFactor);
+                        time_pos[1][0].push(posPred.x * 100 * this.scaleFactor);
+                        time_pos[1][1].push(posPred.y * 100 * this.scaleFactor);
+                        time_pos[1][2].push(posPred.z * 100 * this.scaleFactor);
                         
                         // Save its distance in cm
-                        time_dist.push( posGT.distanceTo(posPred) * 100 );
+                        time_dist.push( posGT.distanceTo(posPred) * 100 * this.scaleFactor );
                     }
                     
                     time_pos.every( (gt_pred, type_idx) =>
@@ -432,35 +450,6 @@ class App {
 
         this.renderer.render( this.scene, this.camera );
     }
-
-    onDrop( event ) {
-
-        event.preventDefault();
-        event.stopPropagation();
-
-        const files = event.dataTransfer.files;
-
-        if(!files.length)
-            return;
-
-        for (let i = 0; i < files.length; i++) {
-            let file = files[i],
-            name = file.name,
-            tokens = name.split("."),
-            extension = tokens[tokens.length-1].toLowerCase(),
-            valid_extensions = [ 'bvh' ];
-            
-            if (valid_extensions.lastIndexOf(extension) < 0) {
-                alert("Invalid file extension. Extension was '" + extension + "'");
-                return;
-            }
-
-            LoaderUtils.loadTextFile( file, text => {
-                const data = this.loader.parse( text );
-                this.onLoadBVH(data) ;
-            });
-        }
-    }
     
     onWindowResize() {
 
@@ -468,6 +457,15 @@ class App {
         this.camera.updateProjectionMatrix();
 
         this.renderer.setSize( window.innerWidth, window.innerHeight );
+    }
+
+    loadTextFile(file, onload) {
+        var reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.currentTarget.result;
+            if(onload) onload(text);
+        };
+        reader.readAsText(file);
     }
 
     createAnimationFromRotations( name, quaternions_data ) {

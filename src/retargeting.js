@@ -1,7 +1,5 @@
 import * as THREE from 'https://cdn.skypack.dev/three@0.136';
 
-let base_size = 1;
-
 class AnimationRetargeting {
 
     constructor() {
