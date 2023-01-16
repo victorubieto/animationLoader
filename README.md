@@ -1,2 +1,2 @@
-# animationLoader
+# Animations View Tool
  
