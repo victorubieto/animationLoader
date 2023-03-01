@@ -57,7 +57,6 @@ class App {
         this.renderer.outputEncoding = THREE.sRGBEncoding;
         this.renderer.gammaInput = true; // applies degamma to textures ( not applied to material.color and roughness, metalnes, etc. Only to colour textures )
         this.renderer.gammaOutput = true; // applies gamma after all lighting operations ( which are done in linear space )
-
         
         const canvas = this.renderer.domElement;
         document.body.appendChild( canvas );
